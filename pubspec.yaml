@@ -1,0 +1,31 @@
+name: rafiq_adhakirin
+description: رفيق الذاكرين — تطبيق إسلامي (قرآن، تفسير، مصحف).
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.2.3
+  scrollable_positioned_list: ^0.3.8
+
+flutter:
+  uses-material-design: true
+
+  # كل مسارات الملفات الإضافية تُعرَّف هنا مرة واحدة (لا تحتاج لمسها عند الرفع)
+  assets:
+    - assets/data/
+    - assets/data/tafsir_muyassar/
+    - assets/models/
+    - assets/images/
+
+  fonts:
+    - family: UthmanicHafs
+      fonts:
+        - asset: assets/fonts/UthmanicHafs1Ver09.ttf
+
+  shaders:
+    - assets/shaders/page_curl.frag

@@ -1,0 +1,11 @@
+# يُنشأ تلقائيًا أثناء البناء — لا يُرفع
+android/
+ios/
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec.lock
+.idea/
+*.iml
