@@ -1,7 +1,9 @@
 // الشاشة الرئيسية: شبكة الأقسام (القرآن فعّال، والباقي قادم تباعًا).
 import 'package:flutter/material.dart';
 
+import 'screen_prayer_times.dart';
 import 'screen_quran_list.dart';
+import 'screen_settings.dart';
 import 'theme_app.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -13,16 +15,16 @@ class HomeScreen extends StatelessWidget {
     _Tile('🤲', 'الوضوء والصلاة', false),
     _Tile('💚', 'الأذكار', false),
     _Tile('📿', 'المسبحة', false),
-    _Tile('🕌', 'أوقات الصلاة', false),
+    _Tile('🕌', 'أوقات الصلاة', true),
     _Tile('📜', 'قصص السيرة', false),
     _Tile('🧭', 'اتجاه القبلة', false),
   ];
 
   void _open(BuildContext context, _Tile t) {
     if (t.enabled) {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const QuranListScreen()),
-      );
+      final Widget screen =
+          t.label == 'أوقات الصلاة' ? const PrayerTimesScreen() : const QuranListScreen();
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('قريباً إن شاء الله 🚧')),
@@ -34,6 +36,15 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppScaffold(
       title: 'رفيق الذاكرين',
+      actions: [
+        IconButton(
+          tooltip: 'الإعدادات',
+          icon: const Icon(Icons.settings, color: AppColors.gold),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+          ),
+        ),
+      ],
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

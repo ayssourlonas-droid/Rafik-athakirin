@@ -1,9 +1,13 @@
 // جذر التطبيق: يحمّل البيانات ثم يعرض الشاشة الرئيسية.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'data_bookmarks.dart';
 import 'data_repo.dart';
+import 'data_settings.dart';
 import 'screen_home.dart';
+import 'service_notifications.dart';
 import 'theme_app.dart';
 
 class RafiqApp extends StatefulWidget {
@@ -13,12 +17,44 @@ class RafiqApp extends StatefulWidget {
   State<RafiqApp> createState() => _RafiqAppState();
 }
 
-class _RafiqAppState extends State<RafiqApp> {
+class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
   late final Future<void> _boot = _load();
+  Timer? _debounce;
 
   Future<void> _load() async {
     await Repo.i.init();
     await Bookmarks.i.init();
+    await AppSettings.i.init();
+    await NotificationService.i.init();
+    AppSettings.i.addListener(_scheduleSoon);
+    _scheduleSoon();
+  }
+
+  // أي تغيير في الإعدادات (أو عودة التطبيق للواجهة) يجدّد جدولة الإشعارات
+  void _scheduleSoon() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 1200), () {
+      NotificationService.i.reschedule(AppSettings.i);
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _scheduleSoon();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    AppSettings.i.removeListener(_scheduleSoon);
+    _debounce?.cancel();
+    super.dispose();
   }
 
   @override

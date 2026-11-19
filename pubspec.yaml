@@ -11,6 +11,9 @@ dependencies:
     sdk: flutter
   shared_preferences: ^2.2.3
   scrollable_positioned_list: ^0.3.8
+  flutter_local_notifications: ^19.0.0
+  geolocator: ^13.0.2
+  audioplayers: ^6.1.0
 
 flutter:
   uses-material-design: true
@@ -19,6 +22,7 @@ flutter:
   assets:
     - assets/data/
     - assets/data/tafsir_muyassar/
+    - assets/audio/
     - assets/models/
     - assets/images/
 
