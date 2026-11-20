@@ -5,11 +5,13 @@
 // - الجدولة بنافذة متحركة لعشرة أيام تُجدَّد كلما فُتح التطبيق أو تغيّرت الإعدادات.
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
+import 'data_format.dart';
+import 'data_repo.dart';
 import 'data_settings.dart';
 import 'prayer_calc.dart';
+import 'service_timezone.dart';
 
 class ScheduleReport {
   const ScheduleReport(this.scheduled, this.exact, this.error);
@@ -38,6 +40,8 @@ class NotificationService {
   static const int _days = 10;
   static const int _nowCountdownId = 1;
   static const int _testId = 9;
+  static const int followDelayMin = 5; // بعد كم دقيقة من أذان مدينة القريب يصل الإشعار
+  static const int _followBaseId = 3000; // + (رقم المدينة × 100) + ترتيب الإشعار
   static const List<Prayer> _prayers = [
     Prayer.fajr,
     Prayer.dhuhr,
@@ -56,7 +60,7 @@ class NotificationService {
   Future<void> init() async {
     if (_ready) return;
     try {
-      tzdata.initializeTimeZones();
+      TzService.ensureInit();
       await _plugin.initialize(
         const InitializationSettings(
           android: AndroidInitializationSettings('@mipmap/ic_launcher'),
@@ -96,6 +100,14 @@ class NotificationService {
       playSound: false,
     ));
     await a.createNotificationChannel(AndroidNotificationChannel(
+      'follow_prayers',
+      'أذان مدن الأقارب (إشعار صامت)',
+      description: 'إشعار صامت بعد أذان المدن التي تتابعها',
+      importance: Importance.defaultImportance,
+      playSound: false,
+      enableVibration: false,
+    ));
+    await a.createNotificationChannel(AndroidNotificationChannel(
       'countdown',
       'الوقت المتبقي للصلاة القادمة',
       description: 'شريط هادئ يعدّ تنازليًا إلى الصلاة القادمة',
@@ -109,6 +121,14 @@ class NotificationService {
   // ───────── الصلاحيات ─────────
   Future<bool> notificationsEnabled() async => (await _android?.areNotificationsEnabled()) ?? false;
   Future<bool> canScheduleExact() async => (await _android?.canScheduleExactNotifications()) ?? false;
+
+  /// مرة واحدة فقط (بعد أول تحديد للموقع) كي لا تتكرر النوافذ.
+  Future<void> requestPermissionsOnce() async {
+    final s = AppSettings.i;
+    if (s.permsAsked) return;
+    s.markPermsAsked();
+    await requestPermissions();
+  }
 
   Future<void> requestPermissions() async {
     final a = _android;
@@ -149,6 +169,21 @@ class NotificationService {
     );
   }
 
+  NotificationDetails _followDetails() {
+    return const NotificationDetails(
+      android: AndroidNotificationDetails(
+        'follow_prayers',
+        'أذان مدن الأقارب (إشعار صامت)',
+        channelDescription: 'إشعار صامت بعد أذان المدن التي تتابعها',
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
+        playSound: false,
+        enableVibration: false,
+        autoCancel: true,
+      ),
+    );
+  }
+
   NotificationDetails _countdownDetails(DateTime target, Duration visibleFor) {
     return NotificationDetails(
       android: AndroidNotificationDetails(
@@ -174,17 +209,11 @@ class NotificationService {
 
   // ───────── الجدولة ─────────
   List<_Event> _events(AppSettings s) {
-    final now = DateTime.now();
+    final now = s.nowAtPlace(); // تاريخ اليوم بتوقيت المكان المختار
     final out = <_Event>[];
     for (var d = 0; d <= _days; d++) {
       final day = DateTime(now.year, now.month, now.day + d, 12);
-      final times = PrayerCalc.compute(
-        date: day,
-        lat: s.lat!,
-        lng: s.lng!,
-        method: s.method,
-        hanafi: s.hanafi,
-      );
+      final times = s.timesFor(day);
       for (final p in _prayers) {
         final t = times[p];
         if (t != null) out.add(_Event(t, p));
@@ -271,6 +300,31 @@ class NotificationService {
             mode,
           );
           count++;
+        }
+      }
+      // مدن الأقارب: إشعار صامت بعد أذان كل مدينة بخمس دقائق (توقيت دقيق غير لازم)
+      for (var ci = 0; ci < s.follows.length; ci++) {
+        final f = s.follows[ci];
+        final fnow = TzService.nowAt(f.tz);
+        var k = 0;
+        for (var d = 0; d <= _days; d++) {
+          final times = s.followTimes(f, DateTime(fnow.year, fnow.month, fnow.day + d, 12));
+          for (final p in _prayers) {
+            final t = times[p];
+            if (t == null) continue;
+            final at = t.add(const Duration(minutes: followDelayMin));
+            if (!at.isAfter(now)) continue;
+            await _zoned(
+              _followBaseId + ci * 100 + k,
+              'أُذِّن لصلاة ${p.nameAr} في ${f.name}',
+              'الساعة ${clockText(t, f.tz)} بتوقيتها • قبل ${arDigits(followDelayMin)} دقائق',
+              at,
+              _followDetails(),
+              AndroidScheduleMode.inexactAllowWhileIdle,
+            );
+            count++;
+            k++;
+          }
         }
       }
       return lastReport = ScheduleReport(count, exact, null);

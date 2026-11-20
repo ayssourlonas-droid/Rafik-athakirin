@@ -7,6 +7,7 @@ import 'data_bookmarks.dart';
 import 'data_repo.dart';
 import 'data_settings.dart';
 import 'screen_home.dart';
+import 'service_location.dart';
 import 'service_notifications.dart';
 import 'theme_app.dart';
 
@@ -28,6 +29,7 @@ class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
     await NotificationService.i.init();
     AppSettings.i.addListener(_scheduleSoon);
     _scheduleSoon();
+    LocationService.autoRefresh(); // الموقع تلقائي (GPS)؛ لا ننتظره كي لا نؤخر الإقلاع
   }
 
   // أي تغيير في الإعدادات (أو عودة التطبيق للواجهة) يجدّد جدولة الإشعارات
@@ -46,7 +48,10 @@ class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _scheduleSoon();
+    if (state == AppLifecycleState.resumed) {
+      _scheduleSoon();
+      LocationService.autoRefresh();
+    }
   }
 
   @override

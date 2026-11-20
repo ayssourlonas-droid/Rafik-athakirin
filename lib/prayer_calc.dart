@@ -48,6 +48,11 @@ const List<CalcMethod> kMethods = [
   CalcMethod('algeria', 'الجزائر', 18.0, 17.0, null),
   CalcMethod('morocco', 'المغرب', 19.0, 17.0, null),
   CalcMethod('turkey', 'تركيا (الديانة)', 18.0, 17.0, null),
+  CalcMethod('uae', 'الإمارات', 18.2, 18.2, null),
+  CalcMethod('qatar', 'قطر', 18.0, null, 90.0),
+  CalcMethod('kuwait', 'الكويت', 18.0, 17.5, null),
+  CalcMethod('seasia', 'ماليزيا وسنغافورة وإندونيسيا', 20.0, 18.0, null),
+  CalcMethod('uoif', 'اتحاد المنظمات الإسلامية في فرنسا (12°)', 12.0, 12.0, null),
 ];
 
 CalcMethod methodById(String id) =>
@@ -113,9 +118,11 @@ class PrayerCalc {
     required double lng,
     required CalcMethod method,
     required bool hanafi,
+    Duration? zoneOffset, // فرق توقيت المدينة المختارة؛ null = ساعة الهاتف
+    Map<Prayer, int> adjust = const {}, // دقائق إضافية لكل صلاة (لمطابقة جدول محلي)
   }) {
     // فرق التوقيت يؤخذ عند الظهر المحلي، فيشمل تغيّر التوقيت الصيفي في ساعات الفجر الأولى
-    final offset = DateTime(date.year, date.month, date.day, 12).timeZoneOffset;
+    final offset = zoneOffset ?? DateTime(date.year, date.month, date.day, 12).timeZoneOffset;
     final tz = offset.inMinutes / 60.0;
     final jd0 = _julian(date.year, date.month, date.day) - lng / (15.0 * 24.0);
     final asrFactor = hanafi ? 2.0 : 1.0;
@@ -178,7 +185,7 @@ class PrayerCalc {
       if (h.isNaN) {
         out[p] = null;
       } else {
-        final minutes = (h * 60.0).round();
+        final minutes = (h * 60.0).round() + (adjust[p] ?? 0);
         out[p] = base
             .add(Duration(minutes: minutes))
             .subtract(offset)

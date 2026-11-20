@@ -3,10 +3,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'data_format.dart';
 import 'data_repo.dart';
 import 'data_settings.dart';
 import 'prayer_calc.dart';
 import 'screen_settings.dart';
+import 'service_timezone.dart';
 import 'sheet_location.dart';
 import 'theme_app.dart';
 
@@ -49,13 +51,10 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
     'الأحد',
   ];
 
-  String _two(int n) => n < 10 ? '٠${arDigits(n)}' : arDigits(n);
+  String _two(int n) => twoDigits(n);
 
-  String _clock(DateTime t) {
-    final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
-    final suffix = t.hour < 12 ? 'ص' : 'م';
-    return '${arDigits(h)}:${_two(t.minute)} $suffix';
-  }
+  // الساعة تُعرض بتوقيت المكان المختار (لا بساعة الهاتف)
+  String _clock(DateTime t) => clockText(t, AppSettings.i.tzId);
 
   String _countdown(Duration d) {
     final total = d.inSeconds < 0 ? 0 : d.inSeconds;
@@ -109,9 +108,9 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
-              onPressed: () => showCityPicker(context),
+              onPressed: () => pickPrimaryCityManually(context),
               icon: const Icon(Icons.location_city),
-              label: const Text('اختيار مدينة'),
+              label: const Text('تعذّر الـ GPS؟ اختر مدينتك'),
               style: OutlinedButton.styleFrom(foregroundColor: AppColors.gold),
             ),
           ],
@@ -121,13 +120,9 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
   }
 
   Widget _content(AppSettings s) {
-    DayTimes day(int offset) => PrayerCalc.compute(
-          date: DateTime(_now.year, _now.month, _now.day + offset, 12),
-          lat: s.lat!,
-          lng: s.lng!,
-          method: s.method,
-          hanafi: s.hanafi,
-        );
+    final place = s.nowAtPlace(); // تاريخ المكان المختار
+    DayTimes day(int offset) =>
+        s.timesFor(DateTime(place.year, place.month, place.day + offset, 12));
     final today = day(0);
     final tomorrow = day(1);
 
@@ -147,7 +142,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
       nextTime = tomorrow[Prayer.fajr];
     }
 
-    final weekday = _weekdays[_now.weekday - 1];
+    final weekday = _weekdays[place.weekday - 1];
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -165,8 +160,8 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                 ),
               ),
               TextButton(
-                onPressed: () => showCityPicker(context),
-                child: const Text('تغيير'),
+                onPressed: () => detectAndSaveLocation(context),
+                child: const Text('تحديث'),
               ),
             ],
           ),
@@ -175,7 +170,7 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Text(
-            '$weekday • ${arDigits(_now.day)}/${arDigits(_now.month)}/${arDigits(_now.year)}   —   ${s.method.nameAr}',
+            '$weekday • ${arDigits(place.day)}/${arDigits(place.month)}/${arDigits(place.year)}   —   ${s.method.nameAr}',
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
           ),
@@ -207,13 +202,59 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
           ),
         for (final p in Prayer.values)
           _row(p, today[p], isNext: p == nextPrayer && today[p] == nextTime),
+        if (s.follows.isNotEmpty) ..._followSection(s),
         const SizedBox(height: 12),
-        const Text(
-          'زوايا الفجر والعشاء حسب الجهة المختارة؛ راجع الجهة الرسمية في بلدك قبل الاعتماد.',
+        Text(
+          'الحساب بطريقة «${s.method.nameAr}». غيّر الطريقة أو اضبط الدقائق من الإعدادات لتطابق جدول بلدك أو مسجدك.',
           textAlign: TextAlign.center,
           style: TextStyle(color: AppColors.textMuted, fontSize: 12),
         ),
       ],
+    );
+  }
+
+  /// مدن الأقارب: الصلاة القادمة في كل مدينة بتوقيتها.
+  List<Widget> _followSection(AppSettings s) {
+    return [
+      const SizedBox(height: 14),
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Text('مدن الأقارب', style: TextStyle(color: AppColors.gold, fontSize: 16)),
+      ),
+      for (final f in s.follows) _followRow(s, f),
+    ];
+  }
+
+  Widget _followRow(AppSettings s, FollowCity f) {
+    final fnow = TzService.nowAt(f.tz);
+    Prayer? np;
+    DateTime? nt;
+    for (var d = 0; d <= 1 && np == null; d++) {
+      final times = s.followTimes(f, DateTime(fnow.year, fnow.month, fnow.day + d, 12));
+      for (final p in Prayer.values) {
+        final t = times[p];
+        if (p.isObligatory && t != null && t.isAfter(_now)) {
+          np = p;
+          nt = t;
+          break;
+        }
+      }
+    }
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: AppDecor.glass(),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(f.name, style: const TextStyle(color: AppColors.textLight, fontSize: 17)),
+          ),
+          Text(
+            np == null || nt == null ? '--' : '${np.nameAr} ${clockText(nt, f.tz)}',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 15),
+          ),
+        ],
+      ),
     );
   }
 

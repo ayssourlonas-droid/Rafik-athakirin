@@ -5,6 +5,8 @@ import 'dart:io' show gzip;
 
 import 'package:flutter/services.dart' show rootBundle;
 
+import 'data_settings.dart';
+
 // ───────────────────── تطبيع النص العربي للبحث ─────────────────────
 final RegExp _marksRe =
     RegExp('[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]');
@@ -30,8 +32,9 @@ String normalizeArabic(String t) {
 /// ("الصلاة") مع الرسم العثماني ("ٱلصَّلَوٰةَ").
 String arabicSkeleton(String t) => normalizeArabic(t).replaceAll(_longVowelsRe, '');
 
-/// أرقام عربية-هندية (٠١٢٣٤٥٦٧٨٩) لأرقام الآيات والصفحات.
+/// أرقام الآيات والصفحات والوقت، بحسب اختيار المستخدم: عربية-هندية (٠١٢٣٤٥٦٧٨٩) أو لاتينية.
 String arDigits(int n) {
+  if (AppSettings.i.latinDigits) return n.toString();
   const d = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
   return n.toString().split('').map((c) => d[int.parse(c)]).join();
 }
