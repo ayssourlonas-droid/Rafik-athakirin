@@ -1,19 +1,27 @@
 name: unzip-upload
 
-# يفكّ ملف زيب رُفع للمستودع، وينسخ محتواه مكان القديم، ثم يحذف الزيب.
+# يفكّ ملف زيب رُفع للمستودع، وينسخ محتواه، ثم يحذف الزيب.
 # التشغيل: Actions ← unzip-upload ← Run workflow.
+# - اسم الزيب فارغ: يبحث عن آخر زيب رُفع، وإذا مضى على رفعه أكثر من 7 ساعات يتوقف.
+# - اسم الزيب مكتوب (بدون .zip): يستخدم هذا الملف مهما كان تاريخه.
 on:
   workflow_dispatch:
     inputs:
-      zip_path:
-        description: "مسار ملف الزيب في المستودع"
-        default: "gamehub_monorepo.zip"
+      zip_name:
+        description: "اسم الزيب بدون .zip (فارغ = آخر زيب رُفع خلال 7 ساعات)"
+        required: false
+        default: ""
       clean:
-        description: "حذف المجلدات القديمة قبل النسخ (yes/no)"
+        description: "yes = حذف كل شيء ثم لصق محتوى الزيب فقط | no = لصق فوق القديم دون حذف"
+        type: choice
+        options:
+          - "yes"
+          - "no"
         default: "yes"
 
 permissions:
   contents: write
+  actions: write   # لتشغيل Build APK بعد الفك (دفعات GITHUB_TOKEN لا تشغّل الـ workflows وحدها)
 
 jobs:
   unzip:
@@ -21,17 +29,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0   # نحتاج التاريخ لمعرفة وقت رفع كل زيب
           # UNZIP_TOKEN اختياري: مفتاح PAT بصلاحية Contents + Workflows (Read and write)
           # بدونه لا يستطيع GitHub تعديل ملفات .github/workflows، فيتخطاها هذا السكربت.
           token: ${{ secrets.UNZIP_TOKEN || github.token }}
       - name: Unzip and replace
         env:
-          ZIP: ${{ inputs.zip_path }}
+          NAME: ${{ inputs.zip_name }}
           CLEAN: ${{ inputs.clean }}
           HAS_PAT: ${{ secrets.UNZIP_TOKEN != '' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [ -f "$ZIP" ] || { echo "::error::الملف غير موجود: $ZIP"; exit 1; }
+          MAX_AGE=$((7*3600))   # 7 ساعات بالثواني
+
+          # ---------- 1) تحديد ملف الزيب ----------
+          if [ -n "$NAME" ]; then
+            NAME="${NAME%.zip}"
+            ZIP="$NAME.zip"
+            if [ ! -f "$ZIP" ]; then
+              echo "::error::لا يوجد ملف بهذا الاسم: $ZIP. ارفعه إلى جذر المستودع أو صحّح الاسم ثم شغّل من جديد."
+              exit 1
+            fi
+          else
+            ZIP=""; BEST=0
+            while IFS= read -r -d '' f; do
+              t="$(git log -1 --format=%ct -- "$f")"
+              [ -n "$t" ] || continue
+              if [ "$t" -gt "$BEST" ]; then BEST="$t"; ZIP="$f"; fi
+            done < <(git ls-files -z '*.zip')
+            if [ -z "$ZIP" ]; then
+              echo "::error::لا يوجد أي ملف زيب في المستودع. ارفع الزيب أو اكتب اسمه ثم شغّل من جديد."
+              exit 1
+            fi
+            AGE=$(( $(date +%s) - BEST ))
+            if [ "$AGE" -gt "$MAX_AGE" ]; then
+              echo "::error::آخر زيب ($ZIP) رُفع قبل $((AGE/3600)) ساعة، أي أكثر من 7 ساعات، فتجاهلته. ارفع زيباً جديداً أو اكتب اسمه في خانة zip_name."
+              exit 1
+            fi
+            echo "تم اختيار آخر زيب: $ZIP (قبل $((AGE/60)) دقيقة)"
+          fi
+
+          # ---------- 2) فكّ الضغط ----------
           X="$RUNNER_TEMP/x"; rm -rf "$X"; mkdir -p "$X"
           unzip -q "$ZIP" -d "$X"
           rm -rf "$X/__MACOSX"
@@ -39,24 +78,54 @@ jobs:
           if [ "$(ls -A "$X" | wc -l)" = "1" ] && [ -d "$X/$(ls -A "$X")" ]; then
             SRC="$X/$(ls -A "$X")"   # الجذر: مجلد واحد (monorepo) فندخل إليه
           fi
+
+          # ---------- 3) التنظيف (clean=yes: حذف كل شيء) ----------
+          if [ "$CLEAN" = "yes" ]; then
+            for p in ./* ./.[!.]*; do
+              [ -e "$p" ] || continue
+              n="$(basename "$p")"
+              case "$n" in .git|.github) continue ;; esac
+              rm -rf "$p"
+            done
+            # .github: يُنظَّف فقط إذا توفر UNZIP_TOKEN، ويبقى unzip.yml
+            if [ "$HAS_PAT" = "true" ] && [ -d .github ]; then
+              find .github -mindepth 1 ! -path '.github/workflows/unzip.yml' ! -path '.github/workflows' -delete
+            fi
+          fi
+
+          # ---------- 4) النسخ (clean=no: لصق فوق القديم دون حذف) ----------
           for p in "$SRC"/* "$SRC"/.[!.]*; do
             [ -e "$p" ] || continue
             n="$(basename "$p")"
+            [ "$n" = ".git" ] && continue
             if [ "$n" = ".github" ]; then
               if [ "$HAS_PAT" != "true" ]; then
                 echo "::warning::تخطّيت .github (لا يوجد UNZIP_TOKEN). أنشئ ملفات workflows يدوياً أو أضف المفتاح."
                 continue
               fi
-              cp -a "$p/." .github/          # دمج بدل الحذف كي يبقى unzip.yml
+              mkdir -p .github
+              cp -a "$p/." .github/
               continue
             fi
-            [ "$CLEAN" = "yes" ] && rm -rf "./$n"
-            cp -a "$p" "./$n"
+            if [ -d "$p" ]; then
+              mkdir -p "./$n"
+              cp -a "$p/." "./$n/"     # دمج داخل المجلد الموجود
+            else
+              cp -a "$p" "./$n"
+            fi
           done
-          git rm -q -f "$ZIP" || rm -f "$ZIP"
+
+          # ---------- 5) حذف الزيب ورفع التغييرات ----------
+          git rm -q -f --ignore-unmatch "$ZIP" || true
+          rm -f "$ZIP"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --cached --quiet && { echo "لا تغييرات"; exit 0; }
           git commit -q -m "Unpack $ZIP"
           git push
+          # دفعة GITHUB_TOKEN لا تشغّل Build APK تلقائيًا، فنشغّله صراحةً.
+          # مع UNZIP_TOKEN تشغّله الدفعة نفسها، فلا نكرّر.
+          if [ "$HAS_PAT" != "true" ] && [ -f .github/workflows/build_apk.yml ]; then
+            gh workflow run build_apk.yml --ref "${GITHUB_REF_NAME}"
+          fi

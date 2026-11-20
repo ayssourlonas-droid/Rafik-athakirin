@@ -42,6 +42,12 @@ jobs:
       - name: تعديل أندرويد
         run: python3 tools/patch_android.py android
 
+      # أيقونة التطبيق: ملفات جاهزة (قديمة + تكيّفية) تحلّ محل أيقونة فلتر الافتراضية
+      - name: أيقونة التطبيق
+        run: |
+          cp -r tools/icons/res/. android/app/src/main/res/
+          ls -la android/app/src/main/res/mipmap-xxxhdpi
+
       # أصوات الأذان تُنسخ إلى موارد أندرويد الخام ليستعملها نظام الإشعارات مباشرة
       # (أسماؤها حروف صغيرة وأرقام وشرطة سفلية فقط، كما يشترط أندرويد)
       - name: نسخ الأذان إلى موارد أندرويد
