@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'screen_prayer_times.dart';
 import 'screen_quran_list.dart';
 import 'screen_settings.dart';
+import 'screen_tasbih.dart';
 import 'theme_app.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -14,7 +15,7 @@ class HomeScreen extends StatelessWidget {
     _Tile('📜', 'الأحاديث', false),
     _Tile('🤲', 'الوضوء والصلاة', false),
     _Tile('💚', 'الأذكار', false),
-    _Tile('📿', 'المسبحة', false),
+    _Tile('📿', 'المسبحة', true),
     _Tile('🕌', 'أوقات الصلاة', true),
     _Tile('📜', 'قصص السيرة', false),
     _Tile('🧭', 'اتجاه القبلة', false),
@@ -22,8 +23,11 @@ class HomeScreen extends StatelessWidget {
 
   void _open(BuildContext context, _Tile t) {
     if (t.enabled) {
-      final Widget screen =
-          t.label == 'أوقات الصلاة' ? const PrayerTimesScreen() : const QuranListScreen();
+      final Widget screen = t.label == 'أوقات الصلاة'
+          ? const PrayerTimesScreen()
+          : t.label == 'المسبحة'
+              ? const TasbihScreen()
+              : const QuranListScreen();
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(

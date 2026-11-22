@@ -3,7 +3,7 @@
 // - العدّاد: إشعار ثابت صامت يعدّه النظام تنازليًا بلا تشغيل التطبيق، ويختفي وحده
 //   عند حلول الصلاة (timeoutAfter) ويحلّ محله إشعار الصلاة التي بعدها.
 // - الجدولة بنافذة متحركة لعشرة أيام تُجدَّد كلما فُتح التطبيق أو تغيّرت الإعدادات.
-import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter/services.dart' show MethodChannel, MissingPluginException, PlatformException;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -39,6 +39,7 @@ class NotificationService {
 
   static const int _days = 10;
   static const int _nowCountdownId = 1;
+  static const MethodChannel _live = MethodChannel('rafiq/live'); // تحديث حي على أندرويد 16+
   static const int _testId = 9;
   static const int followDelayMin = 5; // بعد كم دقيقة من أذان مدينة القريب يصل الإشعار
   static const int _followBaseId = 3000; // + (رقم المدينة × 100) + ترتيب الإشعار
@@ -63,7 +64,7 @@ class NotificationService {
       TzService.ensureInit();
       await _plugin.initialize(
         const InitializationSettings(
-          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          android: AndroidInitializationSettings('ic_stat_adhan'),
         ),
       );
       await _createChannels();
@@ -106,6 +107,12 @@ class NotificationService {
       importance: Importance.defaultImportance,
       playSound: false,
       enableVibration: false,
+    ));
+    await a.createNotificationChannel(AndroidNotificationChannel(
+      'tasbih_reminders',
+      'تذكيرات المسبحة',
+      description: 'تذكير بتسبيح ما بعد الصلاة وتذكير يومي',
+      importance: Importance.defaultImportance,
     ));
     await a.createNotificationChannel(AndroidNotificationChannel(
       'countdown',
@@ -169,6 +176,19 @@ class NotificationService {
     );
   }
 
+  NotificationDetails _reminderDetails() {
+    return const NotificationDetails(
+      android: AndroidNotificationDetails(
+        'tasbih_reminders',
+        'تذكيرات المسبحة',
+        channelDescription: 'تذكير بتسبيح ما بعد الصلاة وتذكير يومي',
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
+        autoCancel: true,
+      ),
+    );
+  }
+
   NotificationDetails _followDetails() {
     return const NotificationDetails(
       android: AndroidNotificationDetails(
@@ -207,6 +227,56 @@ class NotificationService {
     );
   }
 
+  // ───────── التحديث الحي (أندرويد 16+) ─────────
+  Future<bool> _liveSupported() async {
+    try {
+      return (await _live.invokeMethod<bool>('supported')) ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  Future<void> _liveCancel() async {
+    try {
+      await _live.invokeMethod<void>('cancel');
+    } on PlatformException {
+      // لا شيء
+    } on MissingPluginException {
+      // لا شيء
+    }
+  }
+
+  Future<void> _scheduleLive(List<_Event> events, DateTime now) async {
+    final items = <Map<String, Object>>[];
+    final nextIdx = events.indexWhere((e) => e.time.isAfter(now));
+    if (nextIdx >= 0) {
+      items.add({
+        'at': 0,
+        'target': events[nextIdx].time.millisecondsSinceEpoch,
+        'name': events[nextIdx].prayer.nameAr,
+      });
+    }
+    for (var k = 0; k + 1 < events.length; k++) {
+      final e = events[k];
+      final next = events[k + 1];
+      if (!e.time.isAfter(now)) continue;
+      items.add({
+        'at': e.time.millisecondsSinceEpoch,
+        'target': next.time.millisecondsSinceEpoch,
+        'name': next.prayer.nameAr,
+      });
+    }
+    try {
+      await _live.invokeMethod<void>('schedule', {'items': items});
+    } on PlatformException {
+      // لا شيء
+    } on MissingPluginException {
+      // لا شيء
+    }
+  }
+
   // ───────── الجدولة ─────────
   List<_Event> _events(AppSettings s) {
     final now = s.nowAtPlace(); // تاريخ اليوم بتوقيت المكان المختار
@@ -226,7 +296,7 @@ class NotificationService {
   Future<void> _zoned(
     int id,
     String title,
-    String body,
+    String? body,
     DateTime at,
     NotificationDetails details,
     AndroidScheduleMode mode,
@@ -264,14 +334,22 @@ class NotificationService {
       final place = s.placeName.isEmpty ? '' : ' • ${s.placeName}';
       var count = 0;
 
+      // أندرويد 16+: العدّ التنازلي تحديث حي (شريحة/Now Bar)؛ غيره: الإشعار المضغوط من الإضافة
+      final live = s.countdownEnabled && await _liveSupported();
+      if (live) {
+        await _scheduleLive(events, now);
+      } else {
+        await _liveCancel();
+      }
+
       // الشريط الهادئ للصلاة القادمة يظهر فورًا
       final nextIdx = events.indexWhere((e) => e.time.isAfter(now));
-      if (s.countdownEnabled && nextIdx >= 0) {
+      if (s.countdownEnabled && !live && nextIdx >= 0) {
         final e = events[nextIdx];
         await _plugin.show(
           _nowCountdownId,
           'الصلاة القادمة: ${e.prayer.nameAr}',
-          'الوقت المتبقي$place',
+          null, // بلا سطر ثانٍ: إشعار مضغوط بسطر واحد
           _countdownDetails(e.time, e.time.difference(now)),
         );
         count++;
@@ -289,12 +367,12 @@ class NotificationService {
           mode,
         );
         count++;
-        if (s.countdownEnabled && k + 1 < events.length) {
+        if (s.countdownEnabled && !live && k + 1 < events.length) {
           final next = events[k + 1];
           await _zoned(
             2000 + k,
             'الصلاة القادمة: ${next.prayer.nameAr}',
-            'الوقت المتبقي$place',
+            null,
             e.time,
             _countdownDetails(next.time, next.time.difference(e.time)),
             mode,
@@ -325,6 +403,42 @@ class NotificationService {
             count++;
             k++;
           }
+        }
+      }
+      // تذكيرات المسبحة (إشعار هادئ بصوت الإشعارات الافتراضي)
+      if (s.tasbihAfterPrayer) {
+        var k = 0;
+        for (final e in events) {
+          final at = e.time.add(Duration(minutes: s.tasbihDelayMin));
+          if (!at.isAfter(now)) continue;
+          await _zoned(
+            4000 + k,
+            'تسبيح بعد صلاة ${e.prayer.nameAr}',
+            'سبحان الله ${arDigits(33)} • الحمد لله ${arDigits(33)} • الله أكبر ${arDigits(34)}',
+            at,
+            _reminderDetails(),
+            AndroidScheduleMode.inexactAllowWhileIdle,
+          );
+          count++;
+          k++;
+        }
+      }
+      if (s.tasbihDaily) {
+        final base = DateTime.now();
+        final h = s.tasbihDailyMinutes ~/ 60;
+        final mi = s.tasbihDailyMinutes % 60;
+        for (var d = 0; d <= _days; d++) {
+          final at = DateTime(base.year, base.month, base.day + d, h, mi);
+          if (!at.isAfter(now)) continue;
+          await _zoned(
+            4900 + d,
+            'وقت المسبحة 📿',
+            'ألا بذكر الله تطمئن القلوب',
+            at,
+            _reminderDetails(),
+            AndroidScheduleMode.inexactAllowWhileIdle,
+          );
+          count++;
         }
       }
       return lastReport = ScheduleReport(count, exact, null);

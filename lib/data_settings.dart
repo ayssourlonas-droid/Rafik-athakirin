@@ -168,6 +168,10 @@ class AppSettings extends ChangeNotifier {
   bool gpsAsked = false; // هل طُلب إذن الموقع من قبل
   static const int maxFollows = 3;
   final List<FollowCity> follows = [];
+  bool tasbihAfterPrayer = false; // تذكير بتسبيح ما بعد الصلاة
+  int tasbihDelayMin = 10; // بعد كم دقيقة من الصلاة
+  bool tasbihDaily = false; // تذكير يومي
+  int tasbihDailyMinutes = 20 * 60; // وقت التذكير اليومي (دقائق من منتصف الليل)
   bool permsAsked = false; // هل طُلبت صلاحيات الإشعارات والمنبّهات من قبل
   final Map<String, AdhanMode> _modes = {};
 
@@ -188,6 +192,10 @@ class AppSettings extends ChangeNotifier {
     voiceId = p.getString('voice') ?? 'a1';
     countdownEnabled = p.getBool('countdown') ?? true;
     permsAsked = p.getBool('permsAsked') ?? false;
+    tasbihAfterPrayer = p.getBool('tsAfter') ?? false;
+    tasbihDelayMin = (p.getInt('tsDelay') ?? 10).clamp(0, 30).toInt();
+    tasbihDaily = p.getBool('tsDaily') ?? false;
+    tasbihDailyMinutes = (p.getInt('tsDailyAt') ?? 20 * 60).clamp(0, 1439).toInt();
     tzId = p.getString('tz') ?? '';
     manualPrimary = p.getBool('manual') ?? false;
     gpsAsked = p.getBool('gpsAsked') ?? false;
@@ -231,6 +239,10 @@ class AppSettings extends ChangeNotifier {
     await p.setString('voice', voiceId);
     await p.setBool('countdown', countdownEnabled);
     await p.setBool('permsAsked', permsAsked);
+    await p.setBool('tsAfter', tasbihAfterPrayer);
+    await p.setInt('tsDelay', tasbihDelayMin);
+    await p.setBool('tsDaily', tasbihDaily);
+    await p.setInt('tsDailyAt', tasbihDailyMinutes);
     await p.setString('tz', tzId);
     await p.setBool('manual', manualPrimary);
     await p.setBool('gpsAsked', gpsAsked);
@@ -267,6 +279,26 @@ class AppSettings extends ChangeNotifier {
         zoneOffset: TzService.offsetAt(tzId, day.year, day.month, day.day),
         adjust: adjustMap,
       );
+
+  void setTasbihAfterPrayer(bool v) {
+    tasbihAfterPrayer = v;
+    _commit();
+  }
+
+  void setTasbihDelay(int minutes) {
+    tasbihDelayMin = minutes.clamp(0, 30).toInt();
+    _commit();
+  }
+
+  void setTasbihDaily(bool v) {
+    tasbihDaily = v;
+    _commit();
+  }
+
+  void setTasbihDailyTime(int minutes) {
+    tasbihDailyMinutes = minutes.clamp(0, 1439).toInt();
+    _commit();
+  }
 
   void markGpsAsked() {
     gpsAsked = true;

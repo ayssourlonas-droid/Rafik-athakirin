@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'data_bookmarks.dart';
 import 'data_repo.dart';
 import 'data_settings.dart';
+import 'data_tasbih.dart';
 import 'screen_home.dart';
 import 'service_location.dart';
 import 'service_notifications.dart';
@@ -25,6 +26,7 @@ class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
   Future<void> _load() async {
     await Repo.i.init();
     await Bookmarks.i.init();
+    await Tasbih.i.init();
     await AppSettings.i.init();
     await NotificationService.i.init();
     AppSettings.i.addListener(_scheduleSoon);
