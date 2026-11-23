@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main, master]
+    paths-ignore:
+      - '*.zip'   # رفع الزيب وحده لا يشغّل البناء؛ يبدأ بعد الفك (unzip-upload)
 
 jobs:
   build:
@@ -11,7 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      # يفشل البناء إن تغيّر حرف واحد في بيانات القرآن أو تفسيره أو خطه عن البصمات المسجّلة
+      - name: التحقق من سلامة نص القرآن
+        run: python3 tools/verify_quran.py
+
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -38,23 +44,10 @@ jobs:
       - name: اسم التطبيق بالعربية
         run: sed -i 's/android:label="[^"]*"/android:label="رفيق الذاكرين"/' android/app/src/main/AndroidManifest.xml
 
-      # الصلاحيات ومستقبلات الإشعارات وdesugaring (يفشل بوضوح إن لم يجد النمط المتوقع)
+      # الصلاحيات والمستقبلات وdesugaring وكود Kotlin الأصلي، ونسخ الأيقونات والأصوات إلى res
+      # (يفشل بوضوح إن لم يجد النمط المتوقع)
       - name: تعديل أندرويد
         run: python3 tools/patch_android.py android
-
-      # أيقونة التطبيق: ملفات جاهزة (قديمة + تكيّفية) تحلّ محل أيقونة فلتر الافتراضية
-      - name: أيقونة التطبيق
-        run: |
-          cp -r tools/icons/res/. android/app/src/main/res/
-          ls -la android/app/src/main/res/mipmap-xxxhdpi
-
-      # أصوات الأذان تُنسخ إلى موارد أندرويد الخام ليستعملها نظام الإشعارات مباشرة
-      # (أسماؤها حروف صغيرة وأرقام وشرطة سفلية فقط، كما يشترط أندرويد)
-      - name: نسخ الأذان إلى موارد أندرويد
-        run: |
-          mkdir -p android/app/src/main/res/raw
-          cp assets/audio/adhan_*.mp3 android/app/src/main/res/raw/
-          ls -la android/app/src/main/res/raw
 
       - run: flutter pub get
 
