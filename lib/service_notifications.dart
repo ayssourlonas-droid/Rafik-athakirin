@@ -3,6 +3,7 @@
 // - العدّاد: إشعار ثابت صامت يعدّه النظام تنازليًا بلا تشغيل التطبيق، ويختفي وحده
 //   عند حلول الصلاة (timeoutAfter) ويحلّ محله إشعار الصلاة التي بعدها.
 // - الجدولة بنافذة متحركة لعشرة أيام تُجدَّد كلما فُتح التطبيق أو تغيّرت الإعدادات.
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter/services.dart' show MethodChannel, MissingPluginException, PlatformException;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -33,11 +34,41 @@ class _Event {
   final Prayer prayer;
 }
 
+/// تنبيه أذان وصل من إشعار (لفتح شاشة الأذان). الصيغة: adhan|<رقم الإشعار>|<اسم الصلاة>|<وقتها بالميلي ثانية>
+class AdhanAlert {
+  const AdhanAlert(this.id, this.prayerName, this.time);
+  final int id;
+  final String prayerName;
+  final DateTime time;
+
+  static const String testName = 'تجربة';
+  bool get isTest => prayerName == testName;
+
+  static String payloadOf(int id, String prayerName, DateTime time) =>
+      'adhan|$id|$prayerName|${time.millisecondsSinceEpoch}';
+
+  static AdhanAlert? parse(String? payload) {
+    if (payload == null) return null;
+    final p = payload.split('|');
+    if (p.length < 4 || p[0] != 'adhan') return null;
+    final id = int.tryParse(p[1]);
+    final ms = int.tryParse(p[3]);
+    if (id == null || ms == null) return null;
+    return AdhanAlert(id, p[2], DateTime.fromMillisecondsSinceEpoch(ms));
+  }
+}
+
 class NotificationService {
   NotificationService._();
   static final NotificationService i = NotificationService._();
 
   static const int _days = 10;
+
+  /// يُضبط عند الضغط على إشعار أذان أو عند فتحه بملء الشاشة؛ يستمع إليه app_root ليفتح AdhanScreen.
+  static final ValueNotifier<AdhanAlert?> adhanAlert = ValueNotifier<AdhanAlert?>(null);
+
+  /// يزيد عند الضغط على تذكير المسبحة؛ يستمع إليه app_root ليفتح شاشة المسبحة.
+  static final ValueNotifier<int> tasbihTap = ValueNotifier<int>(0);
   static const int _nowCountdownId = 1;
   static const MethodChannel _live = MethodChannel('rafiq/live'); // تحديث حي على أندرويد 16+
   static const int _testId = 9;
@@ -66,15 +97,46 @@ class NotificationService {
         const InitializationSettings(
           android: AndroidInitializationSettings('ic_stat_adhan'),
         ),
+        onDidReceiveNotificationResponse: (r) => _handlePayload(r.payload),
       );
       await _createChannels();
       _ready = true;
+      // التطبيق فُتح من إشعار (أو بملء الشاشة) وهو مغلق تمامًا
+      final launch = await _plugin.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp == true) {
+        _handlePayload(launch!.notificationResponse?.payload);
+      }
     } catch (_) {
       _ready = false;
     }
   }
 
-  static String _channelId(String voice, AdhanMode mode) => 'adhan_${voice}_${mode.name}';
+  // اسم ملف الصوت في res/raw (يبقى كما هو)
+  static String _soundName(String voice, AdhanMode mode) => 'adhan_${voice}_${mode.name}';
+  // رقم القناة: صوت الأذان ببث المنبّه. القنوات القديمة (ببث الإشعارات) تُحذف عند التهيئة.
+  static String _channelId(String voice, AdhanMode mode) => 'alarm_${_soundName(voice, mode)}';
+
+  void _handlePayload(String? payload) {
+    if (payload == 'tasbih') {
+      tasbihTap.value++;
+      return;
+    }
+    final a = AdhanAlert.parse(payload);
+    if (a == null) return;
+    // إشعار قديم ضغطتَ عليه بعد ساعات: لا نفتح شاشة الأذان
+    final age = DateTime.now().difference(a.time);
+    if (age > const Duration(minutes: 30)) return;
+    adhanAlert.value = a;
+  }
+
+  /// يوقف الأذان بإلغاء إشعاره (وبإلغائه يتوقف صوته).
+  Future<void> stopAdhan(int id) async {
+    try {
+      await _plugin.cancel(id);
+    } catch (_) {
+      // لا شيء
+    }
+  }
 
   Future<void> _createChannels() async {
     final a = _android;
@@ -82,13 +144,15 @@ class NotificationService {
     for (final v in kAdhanVoices) {
       for (final m in const [AdhanMode.full, AdhanMode.short]) {
         final id = _channelId(v.id, m);
+        await a.deleteNotificationChannel(_soundName(v.id, m)); // القناة القديمة
         await a.createNotificationChannel(AndroidNotificationChannel(
           id,
           'الأذان — ${v.nameAr} (${m.nameAr})',
-          description: 'تنبيه وقت الصلاة بصوت الأذان',
+          description: 'تنبيه وقت الصلاة بصوت الأذان (ببث المنبّه)',
           importance: Importance.max,
           playSound: true,
-          sound: RawResourceAndroidNotificationSound(id),
+          sound: RawResourceAndroidNotificationSound(_soundName(v.id, m)),
+          audioAttributesUsage: AudioAttributesUsage.alarm,
           enableVibration: true,
         ));
       }
@@ -169,9 +233,12 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.high,
         playSound: true,
-        sound: RawResourceAndroidNotificationSound(id),
+        sound: RawResourceAndroidNotificationSound(_soundName(voice, mode)),
+        audioAttributesUsage: AudioAttributesUsage.alarm,
         autoCancel: true,
         category: AndroidNotificationCategory.alarm,
+        // شاشة الأذان فوق القفل (تظهر والهاتف مقفل أو شاشته مطفأة فقط)
+        fullScreenIntent: AppSettings.i.adhanLockScreen,
       ),
     );
   }
@@ -299,15 +366,17 @@ class NotificationService {
     String? body,
     DateTime at,
     NotificationDetails details,
-    AndroidScheduleMode mode,
-  ) async {
+    AndroidScheduleMode mode, {
+    String? payload,
+  }) async {
     final when = tz.TZDateTime.from(at, tz.UTC);
     try {
-      await _plugin.zonedSchedule(id, title, body, when, details, androidScheduleMode: mode);
+      await _plugin.zonedSchedule(id, title, body, when, details,
+          androidScheduleMode: mode, payload: payload);
     } on PlatformException catch (e) {
       if (e.code == 'exact_alarms_not_permitted') {
         await _plugin.zonedSchedule(id, title, body, when, details,
-            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle);
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle, payload: payload);
       } else {
         rethrow;
       }
@@ -365,6 +434,7 @@ class NotificationService {
           e.time,
           _adhanDetails(s.voiceId, s.modeOf(e.prayer)),
           mode,
+          payload: AdhanAlert.payloadOf(1000 + k, e.prayer.nameAr, e.time),
         );
         count++;
         if (s.countdownEnabled && !live && k + 1 < events.length) {
@@ -418,6 +488,7 @@ class NotificationService {
             at,
             _reminderDetails(),
             AndroidScheduleMode.inexactAllowWhileIdle,
+            payload: 'tasbih',
           );
           count++;
           k++;
@@ -437,6 +508,7 @@ class NotificationService {
             at,
             _reminderDetails(),
             AndroidScheduleMode.inexactAllowWhileIdle,
+            payload: 'tasbih',
           );
           count++;
         }
@@ -460,6 +532,8 @@ class NotificationService {
         DateTime.now().add(Duration(seconds: seconds)),
         _adhanDetails(s.voiceId, mode),
         exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: AdhanAlert.payloadOf(
+            _testId, AdhanAlert.testName, DateTime.now().add(Duration(seconds: seconds))),
       );
       return exact
           ? 'سيصلك الإشعار خلال $seconds ثوانٍ. يمكنك قفل الشاشة الآن.'

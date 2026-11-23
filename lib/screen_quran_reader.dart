@@ -1,6 +1,7 @@
 // شاشة قراءة السورة بثلاثة أوضاع: بطاقات، صفحة متصلة، ومصحف حقيقي (604 صفحة).
 import 'package:flutter/material.dart';
 
+import 'data_bookmarks.dart';
 import 'data_repo.dart';
 import 'theme_app.dart';
 import 'view_mushaf_pages.dart';
@@ -34,6 +35,7 @@ class _QuranReaderScreenState extends State<QuranReaderScreen> {
             }
             return MushafPagesView(
               initialPage: Repo.i.pageOfAyah(s.n, widget.initialAyah ?? 1),
+              onPageChanged: Bookmarks.i.setLastPage,
             );
           },
         );

@@ -88,7 +88,7 @@ class Repo {
   Repo._();
   static final Repo i = Repo._();
 
-  static const String basmala = 'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ';
+  static const String basmala = 'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ'; // مطابقة حرفيًا لنص الفاتحة آية 1 في البيانات (يتحقق منها tools/verify_quran.py)
   static const int pageCount = 604;
 
   List<Surah> surahs = const [];
@@ -104,12 +104,16 @@ class Repo {
     for (var i = 0; i < idx.length; i++) {
       final m = idx[i];
       final ayahs = (q[i] as Map<String, dynamic>)['ayahs'] as List;
+      final texts = ayahs.map((e) => e.toString()).toList();
+      // الآية الأولى في البيانات تبدأ بالبسملة في كل السور عدا الفاتحة والتوبة، والواجهات
+      // تعرضها عنوانًا مستقلًا، فنحذفها من نص الآية كي لا تتكرر (وكي لا يلوّث البحثَ تكرارُها).
+      if ((m['n'] as int) != 1 && texts.isNotEmpty) texts[0] = _stripBasmala(texts[0]);
       out.add(Surah(
         n: m['n'] as int,
         ar: m['ar'] as String,
         en: m['en'] as String,
         type: m['type'] as String,
-        ayahs: ayahs.map((e) => e.toString()).toList(),
+        ayahs: texts,
       ));
     }
     surahs = out;
@@ -117,6 +121,16 @@ class Repo {
   }
 
   Surah surah(int n) => surahs[n - 1];
+
+  static String _stripBasmala(String t) {
+    final words = t.split(' ');
+    if (words.length <= 4) return t; // الفاتحة: الآية هي البسملة نفسها
+    const target = ['بسم', 'الله', 'الرحمن', 'الرحيم'];
+    for (var i = 0; i < 4; i++) {
+      if (normalizeArabic(words[i]) != target[i]) return t;
+    }
+    return words.sublist(4).join(' ');
+  }
 
   // ─────────── البحث ───────────
   List<_Row>? _rows;

@@ -168,6 +168,8 @@ class AppSettings extends ChangeNotifier {
   bool gpsAsked = false; // هل طُلب إذن الموقع من قبل
   static const int maxFollows = 3;
   final List<FollowCity> follows = [];
+  int hijriOffset = 0; // ضبط التقويم الهجري بالأيام (-2..2)
+  bool adhanLockScreen = true; // شاشة الأذان فوق القفل
   bool tasbihAfterPrayer = false; // تذكير بتسبيح ما بعد الصلاة
   int tasbihDelayMin = 10; // بعد كم دقيقة من الصلاة
   bool tasbihDaily = false; // تذكير يومي
@@ -192,6 +194,8 @@ class AppSettings extends ChangeNotifier {
     voiceId = p.getString('voice') ?? 'a1';
     countdownEnabled = p.getBool('countdown') ?? true;
     permsAsked = p.getBool('permsAsked') ?? false;
+    hijriOffset = (p.getInt('hijriOff') ?? 0).clamp(-2, 2).toInt();
+    adhanLockScreen = p.getBool('lockScreen') ?? true;
     tasbihAfterPrayer = p.getBool('tsAfter') ?? false;
     tasbihDelayMin = (p.getInt('tsDelay') ?? 10).clamp(0, 30).toInt();
     tasbihDaily = p.getBool('tsDaily') ?? false;
@@ -239,6 +243,8 @@ class AppSettings extends ChangeNotifier {
     await p.setString('voice', voiceId);
     await p.setBool('countdown', countdownEnabled);
     await p.setBool('permsAsked', permsAsked);
+    await p.setInt('hijriOff', hijriOffset);
+    await p.setBool('lockScreen', adhanLockScreen);
     await p.setBool('tsAfter', tasbihAfterPrayer);
     await p.setInt('tsDelay', tasbihDelayMin);
     await p.setBool('tsDaily', tasbihDaily);
@@ -279,6 +285,16 @@ class AppSettings extends ChangeNotifier {
         zoneOffset: TzService.offsetAt(tzId, day.year, day.month, day.day),
         adjust: adjustMap,
       );
+
+  void setHijriOffset(int days) {
+    hijriOffset = days.clamp(-2, 2).toInt();
+    _commit();
+  }
+
+  void setAdhanLockScreen(bool v) {
+    adhanLockScreen = v;
+    _commit();
+  }
 
   void setTasbihAfterPrayer(bool v) {
     tasbihAfterPrayer = v;

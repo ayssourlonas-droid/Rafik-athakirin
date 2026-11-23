@@ -1,8 +1,10 @@
 // الشاشة الرئيسية: شبكة الأقسام (القرآن فعّال، والباقي قادم تباعًا).
 import 'package:flutter/material.dart';
 
+import 'screen_hadith.dart';
 import 'screen_prayer_times.dart';
-import 'screen_quran_list.dart';
+import 'screen_qibla.dart';
+import 'screen_quran_book.dart';
 import 'screen_settings.dart';
 import 'screen_tasbih.dart';
 import 'theme_app.dart';
@@ -12,13 +14,13 @@ class HomeScreen extends StatelessWidget {
 
   static const List<_Tile> _tiles = [
     _Tile('📖', 'القرآن الكريم', true),
-    _Tile('📜', 'الأحاديث', false),
+    _Tile('📜', 'الأحاديث', true),
     _Tile('🤲', 'الوضوء والصلاة', false),
     _Tile('💚', 'الأذكار', false),
     _Tile('📿', 'المسبحة', true),
     _Tile('🕌', 'أوقات الصلاة', true),
     _Tile('📜', 'قصص السيرة', false),
-    _Tile('🧭', 'اتجاه القبلة', false),
+    _Tile('🧭', 'اتجاه القبلة', true),
   ];
 
   void _open(BuildContext context, _Tile t) {
@@ -27,7 +29,11 @@ class HomeScreen extends StatelessWidget {
           ? const PrayerTimesScreen()
           : t.label == 'المسبحة'
               ? const TasbihScreen()
-              : const QuranListScreen();
+              : t.label == 'الأحاديث'
+                  ? const HadithListScreen()
+                  : t.label == 'اتجاه القبلة'
+                      ? const QiblaScreen()
+                      : const QuranBookScreen();
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(

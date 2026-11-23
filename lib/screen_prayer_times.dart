@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'data_format.dart';
+import 'data_hijri.dart';
 import 'data_repo.dart';
 import 'data_settings.dart';
 import 'prayer_calc.dart';
@@ -143,6 +144,8 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
     }
 
     final weekday = _weekdays[place.weekday - 1];
+    final hijri = Hijri.format(
+        Hijri.fromGregorian(place.year, place.month, place.day, offsetDays: s.hijriOffset));
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -170,9 +173,9 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Text(
-            '$weekday • ${arDigits(place.day)}/${arDigits(place.month)}/${arDigits(place.year)}   —   ${s.method.nameAr}',
+            '$weekday • $hijri\n${arDigits(place.day)}/${arDigits(place.month)}/${arDigits(place.year)}   —   ${s.method.nameAr}',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.6),
           ),
         ),
         if (nextPrayer != null && nextTime != null)

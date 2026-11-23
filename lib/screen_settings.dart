@@ -2,9 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'data_hijri.dart';
 import 'data_repo.dart';
 import 'data_settings.dart';
 import 'prayer_calc.dart';
+import 'service_lockscreen.dart';
 import 'service_notifications.dart';
 import 'sheet_location.dart';
 import 'theme_app.dart';
@@ -22,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _playing; // اسم المورد الجاري تشغيله (adhan_a1_full ...)
   bool _notifOk = false;
   bool _exactOk = false;
+  bool _fsiOk = true;
 
   @override
   void initState() {
@@ -48,10 +51,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadPermissions() async {
     final n = await NotificationService.i.notificationsEnabled();
     final e = await NotificationService.i.canScheduleExact();
+    final f = await LockScreenService.fsiAllowed();
     if (mounted) {
       setState(() {
         _notifOk = n;
         _exactOk = e;
+        _fsiOk = f;
       });
     }
   }
@@ -281,6 +286,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ]),
+          _section('التقويم الهجري', [
+            Builder(builder: (context) {
+              final now = s.nowAtPlace();
+              final h = Hijri.fromGregorian(now.year, now.month, now.day, offsetDays: s.hijriOffset);
+              return Row(
+                children: [
+                  Expanded(
+                    child: Text(Hijri.format(h),
+                        style: const TextStyle(color: AppColors.textLight, fontSize: 16)),
+                  ),
+                  IconButton(
+                    onPressed: () => s.setHijriOffset(s.hijriOffset - 1),
+                    icon: const Icon(Icons.remove_circle_outline, color: AppColors.gold),
+                  ),
+                  SizedBox(
+                    width: 36,
+                    child: Text(
+                      s.hijriOffset == 0
+                          ? arDigits(0)
+                          : (s.hijriOffset > 0
+                              ? '+${arDigits(s.hijriOffset)}'
+                              : '-${arDigits(-s.hijriOffset)}'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.textLight, fontSize: 16),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => s.setHijriOffset(s.hijriOffset + 1),
+                    icon: const Icon(Icons.add_circle_outline, color: AppColors.gold),
+                  ),
+                ],
+              );
+            }),
+            const Text(
+              'الحساب جدولي تقريبي وقد يختلف يومًا عن الرؤية أو عن أم القرى؛ اضبط الأيام ليوافق بلدك.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+          ]),
           _section('صوت الأذان', [
             for (final v in kAdhanVoices) _voiceTile(v),
           ]),
@@ -304,6 +347,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
+          ]),
+          _section('شاشة الأذان فوق القفل', [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              activeColor: AppColors.gold,
+              title: const Text('إظهار شاشة الأذان',
+                  style: TextStyle(color: AppColors.textLight)),
+              subtitle: const Text(
+                'تظهر عند حلول الوقت إذا كان الهاتف مقفلًا أو شاشته مطفأة، وفيها زر لإيقاف الأذان. '
+                'إن كان الهاتف مفتوحًا يظهر إشعار عادي.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+              value: s.adhanLockScreen,
+              onChanged: s.setAdhanLockScreen,
+            ),
+            _status('إذن الإشعارات بملء الشاشة', _fsiOk),
+            if (!_fsiOk)
+              const Padding(
+                padding: EdgeInsets.only(top: 2, bottom: 6),
+                child: Text(
+                  'بدون هذا الإذن يظهر إشعار منبثق لمدة ٦٠ ثانية بدل الشاشة. فعّله من «الوصول الخاص» في إعدادات الهاتف.',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+              ),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton(
+                  onPressed: () async {
+                    await LockScreenService.openFsiSettings();
+                  },
+                  style: OutlinedButton.styleFrom(foregroundColor: AppColors.gold),
+                  child: const Text('فتح إعداد الإذن'),
+                ),
+                TextButton(
+                  onPressed: _loadPermissions,
+                  child: const Text('تحقق من الحالة'),
+                ),
+              ],
+            ),
           ]),
           _section('الشريط الهادئ', [
             SwitchListTile(

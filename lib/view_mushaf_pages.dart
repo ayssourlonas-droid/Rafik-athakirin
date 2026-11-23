@@ -13,9 +13,12 @@ import 'fx_page_curl.dart';
 import 'theme_app.dart';
 
 class MushafPagesView extends StatefulWidget {
-  const MushafPagesView({super.key, required this.initialPage});
+  const MushafPagesView({super.key, required this.initialPage, this.onPageChanged});
 
   final int initialPage;
+
+  /// يُستدعى عند فتح صفحة (لحفظ آخر صفحة). لا تستدعِ setState في الأب منه.
+  final ValueChanged<int>? onPageChanged;
 
   @override
   State<MushafPagesView> createState() => _MushafPagesViewState();
@@ -42,11 +45,13 @@ class _MushafPagesViewState extends State<MushafPagesView>
   double _accum = 0;
   double _origin = 0;
   double _width = 360;
+  String _warmKey = '';
 
   @override
   void initState() {
     super.initState();
     _page = math.max(1, math.min(Repo.pageCount, widget.initialPage));
+    widget.onPageChanged?.call(_page);
     _anim = AnimationController(vsync: this);
     loadCurlShader().then((s) {
       if (mounted) _shader = s;
@@ -65,6 +70,7 @@ class _MushafPagesViewState extends State<MushafPagesView>
 
   void _goTo(int p) {
     setState(() => _page = math.max(1, math.min(Repo.pageCount, p)));
+    widget.onPageChanged?.call(_page);
   }
 
   double _clamp01(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);
@@ -136,6 +142,7 @@ class _MushafPagesViewState extends State<MushafPagesView>
       _snap = null;
       _busy = false;
     });
+    if (commit) widget.onPageChanged?.call(_page);
   }
 
   Future<void> _finishDrag(double velocity) async {
@@ -230,6 +237,19 @@ class _MushafPagesViewState extends State<MushafPagesView>
     }
   }
 
+  /// يحسب مسبقًا مقاس خط الصفحتين المجاورتين كي لا يتأخر التقليب.
+  void _prewarmNeighbors(double w, double h) {
+    final key = '$_page|${w.round()}|${h.round()}';
+    if (key == _warmKey) return;
+    _warmKey = key;
+    final page = _page;
+    Future<void>.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted || page != _page) return;
+      if (page < Repo.pageCount) MushafPaperPage.prewarm(page + 1, w, h);
+      if (page > 1) MushafPaperPage.prewarm(page - 1, w, h);
+    });
+  }
+
   // ───────── الواجهة ─────────
   Widget _navBar() {
     final canPrev = _page > 1;
@@ -278,6 +298,7 @@ class _MushafPagesViewState extends State<MushafPagesView>
             child: LayoutBuilder(
               builder: (context, constraints) {
                 _width = constraints.maxWidth;
+                _prewarmNeighbors(constraints.maxWidth, constraints.maxHeight);
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onHorizontalDragStart: _onStart,
@@ -325,68 +346,153 @@ class _MushafPagesViewState extends State<MushafPagesView>
 }
 
 /// ورقة المصحف: ورق كريمي، وخط عثماني بحبر داكن.
+/// الصفحة كلها تملأ المساحة المتاحة بلا تمرير: يُحسب أكبر مقاس خط يتّسع فيه محتوى الصفحة
+/// بعرضها وارتفاعها (بحث ثنائي بقياس النص فعليًا)، ويُخزَّن الناتج لكل صفحة ومقاس.
 /// حدود الصفحة من البيانات الرسمية؛ التفاف السطر عادي وليس مطابقًا حرفيًا لكل سطر مطبوع.
 class MushafPaperPage extends StatelessWidget {
   const MushafPaperPage({super.key, required this.page});
 
   final int page;
 
-  Widget _block(MushafBlock b) {
+  static const double _baseSize = 26;
+  static const double _minScale = 0.4;
+  static const double _maxScale = 1.15;
+  static const EdgeInsets _pad = EdgeInsets.fromLTRB(14, 10, 14, 10);
+  static const double _frame = 4; // إطار الورقة: 2 + 2
+  static final Map<String, double> _fitCache = <String, double>{};
+
+  // الأنماط مشتركة بين القياس والعرض كي يتطابقا؛ letterSpacing صفر يمنع تأثير الثيم في العرض.
+  static TextStyle _ayahStyle(double k) => TextStyle(
+        fontFamily: AppText.quranFont,
+        fontSize: _baseSize * k,
+        height: 2.0,
+        letterSpacing: 0,
+        color: AppColors.ink,
+      );
+  static TextStyle _numStyle(double k) => TextStyle(color: AppColors.inkGold, fontSize: 22 * k);
+  static TextStyle _headStyle(double k) => TextStyle(
+        fontFamily: AppText.quranFont,
+        color: AppColors.inkGold,
+        fontSize: 22 * k,
+        height: 1.5,
+        letterSpacing: 0,
+        fontWeight: FontWeight.bold,
+      );
+  static TextStyle _basmalaStyle(double k) => TextStyle(
+        fontFamily: AppText.quranFont,
+        fontSize: 26 * k,
+        height: 1.8,
+        letterSpacing: 0,
+        color: AppColors.inkGold,
+      );
+
+  static String _headText(MushafBlock b) => '﴾ سورة ${Repo.i.surah(b.surah).ar} ﴿';
+
+  static TextSpan _ayahSpan(MushafBlock b, double k) {
+    final s = Repo.i.surah(b.surah);
+    final spans = <InlineSpan>[];
+    for (final a in b.ayahs) {
+      if (a < 1 || a > s.ayahCount) continue;
+      spans.add(TextSpan(text: '${s.ayahs[a - 1]} '));
+      spans.add(TextSpan(text: '﴿${arDigits(a)}﴾ ', style: _numStyle(k)));
+    }
+    return TextSpan(children: spans, style: _ayahStyle(k));
+  }
+
+  // ───────── القياس ─────────
+  static double _textH(InlineSpan span, double width, {bool justify = false}) {
+    final tp = TextPainter(
+      text: span,
+      textDirection: TextDirection.rtl,
+      textAlign: justify ? TextAlign.justify : TextAlign.center,
+      textScaler: TextScaler.noScaling,
+    )..layout(minWidth: justify ? width : 0, maxWidth: width);
+    final h = tp.height;
+    tp.dispose();
+    return h;
+  }
+
+  static double _blockHeight(MushafBlock b, double k, double w) {
+    switch (b.type) {
+      case 's':
+        // هامش 6k×2 + حشو 6k×2 + إطار 2
+        return 24 * k + 2 + _textH(TextSpan(text: _headText(b), style: _headStyle(k)), w - 2);
+      case 'b':
+        return 8 * k + _textH(TextSpan(text: Repo.basmala, style: _basmalaStyle(k)), w);
+      default:
+        return _textH(_ayahSpan(b, k), w, justify: true);
+    }
+  }
+
+  static double _fit(int page, double w, double h) {
+    final key = '$page|${w.round()}|${h.round()}';
+    final hit = _fitCache[key];
+    if (hit != null) return hit;
+    final blocks = Repo.i.pageBlocks(page);
+    double total(double k) {
+      var t = 0.0;
+      for (final b in blocks) {
+        t += _blockHeight(b, k, w);
+      }
+      return t;
+    }
+
+    final limit = h * 0.985; // هامش أمان صغير
+    double k;
+    if (total(_maxScale) <= limit) {
+      k = _maxScale;
+    } else if (total(_minScale) > limit) {
+      k = _minScale;
+    } else {
+      var lo = _minScale;
+      var hi = _maxScale;
+      for (var i = 0; i < 12; i++) {
+        final mid = (lo + hi) / 2;
+        if (total(mid) <= limit) {
+          lo = mid;
+        } else {
+          hi = mid;
+        }
+      }
+      k = lo;
+    }
+    if (_fitCache.length > 40) _fitCache.clear();
+    _fitCache[key] = k;
+    return k;
+  }
+
+  /// حساب مسبق لصفحة بمقاس الورقة الخارجي (عرض × ارتفاع).
+  static void prewarm(int page, double outerW, double outerH) {
+    if (outerW <= 0 || outerH <= 0) return;
+    _fit(page, outerW - _frame - _pad.horizontal, outerH - _frame - _pad.vertical);
+  }
+
+  // ───────── العرض ─────────
+  Widget _block(MushafBlock b, double k) {
     switch (b.type) {
       case 's':
         return Container(
-          margin: const EdgeInsets.symmetric(vertical: 10),
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          margin: EdgeInsets.symmetric(vertical: 6 * k),
+          padding: EdgeInsets.symmetric(vertical: 6 * k),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             border: Border.all(color: AppColors.inkGold),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Text(
-            '﴾ سورة ${Repo.i.surah(b.surah).ar} ﴿',
-            style: const TextStyle(
-              color: AppColors.inkGold,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          child: Text(_headText(b), textAlign: TextAlign.center, style: _headStyle(k)),
         );
       case 'b':
-        return const Padding(
-          padding: EdgeInsets.symmetric(vertical: 6),
+        return Padding(
+          padding: EdgeInsets.symmetric(vertical: 4 * k),
           child: Center(
-            child: Text(
-              Repo.basmala,
-              style: TextStyle(
-                fontFamily: AppText.quranFont,
-                fontSize: 26,
-                height: 1.8,
-                color: AppColors.inkGold,
-              ),
-            ),
+            child: Text(Repo.basmala, textAlign: TextAlign.center, style: _basmalaStyle(k)),
           ),
         );
       default:
-        final s = Repo.i.surah(b.surah);
-        final spans = <InlineSpan>[];
-        for (final a in b.ayahs) {
-          if (a < 1 || a > s.ayahCount) continue;
-          spans.add(TextSpan(text: '${s.ayahs[a - 1]} '));
-          spans.add(TextSpan(
-            text: '﴿${arDigits(a)}﴾ ',
-            style: const TextStyle(color: AppColors.inkGold, fontSize: 22),
-          ));
-        }
         return Text.rich(
-          TextSpan(children: spans),
+          _ayahSpan(b, k),
           textAlign: TextAlign.justify,
           textDirection: TextDirection.rtl,
-          style: const TextStyle(
-            fontFamily: AppText.quranFont,
-            fontSize: 26,
-            height: 2.0,
-            color: AppColors.ink,
-          ),
         );
     }
   }
@@ -394,19 +500,39 @@ class MushafPaperPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final blocks = Repo.i.pageBlocks(page);
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.paper,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: AppColors.paperEdge, width: 2),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [for (final b in blocks) _block(b)],
+    // الصفحة تُقاس بلا تكبير خط النظام (المقاس يُحسب لتملأ الشاشة)
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.paper,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: AppColors.paperEdge, width: 2),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final w = c.maxWidth - _pad.horizontal;
+              final h = c.maxHeight - _pad.vertical;
+              final k = _fit(page, w, h);
+              return Padding(
+                padding: _pad,
+                // احتياط: إن زاد الارتفاع الفعلي قليلًا عن القياس يُصغَّر المحتوى بدل أن يفيض
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    width: w,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [for (final b in blocks) _block(b, k)],
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),

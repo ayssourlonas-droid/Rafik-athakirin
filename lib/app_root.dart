@@ -7,7 +7,9 @@ import 'data_bookmarks.dart';
 import 'data_repo.dart';
 import 'data_settings.dart';
 import 'data_tasbih.dart';
+import 'screen_adhan.dart';
 import 'screen_home.dart';
+import 'screen_tasbih.dart';
 import 'service_location.dart';
 import 'service_notifications.dart';
 import 'theme_app.dart';
@@ -42,10 +44,57 @@ class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
     });
   }
 
+  final GlobalKey<NavigatorState> _nav = GlobalKey<NavigatorState>();
+  bool _adhanOpen = false;
+
+  void _onTasbih() {
+    _openTasbih(0);
+  }
+
+  void _openTasbih(int attempt) {
+    final nav = _nav.currentState;
+    if (nav == null) {
+      if (attempt < 20) {
+        Future<void>.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) _openTasbih(attempt + 1);
+        });
+      }
+      return;
+    }
+    nav.push(MaterialPageRoute<void>(builder: (_) => const TasbihScreen()));
+  }
+
+  void _onAdhan() {
+    final a = NotificationService.adhanAlert.value;
+    if (a == null) return;
+    NotificationService.adhanAlert.value = null;
+    _openAdhan(a, 0);
+  }
+
+  // قد يصل التنبيه قبل أن يجهز الملاح (فتح من إشعار والتطبيق مغلق)، فنعيد المحاولة قليلًا
+  void _openAdhan(AdhanAlert a, int attempt) {
+    if (_adhanOpen) return;
+    final nav = _nav.currentState;
+    if (nav == null) {
+      if (attempt < 20) {
+        Future<void>.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) _openAdhan(a, attempt + 1);
+        });
+      }
+      return;
+    }
+    _adhanOpen = true;
+    nav
+        .push(MaterialPageRoute<void>(builder: (_) => AdhanScreen(alert: a)))
+        .whenComplete(() => _adhanOpen = false);
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    NotificationService.adhanAlert.addListener(_onAdhan);
+    NotificationService.tasbihTap.addListener(_onTasbih);
   }
 
   @override
@@ -59,6 +108,8 @@ class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    NotificationService.adhanAlert.removeListener(_onAdhan);
+    NotificationService.tasbihTap.removeListener(_onTasbih);
     AppSettings.i.removeListener(_scheduleSoon);
     _debounce?.cancel();
     super.dispose();
@@ -67,6 +118,7 @@ class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _nav,
       debugShowCheckedModeBanner: false,
       title: 'رفيق الذاكرين',
       theme: buildAppTheme(),

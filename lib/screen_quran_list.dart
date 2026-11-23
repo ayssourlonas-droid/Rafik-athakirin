@@ -8,7 +8,10 @@ import 'screen_quran_reader.dart';
 import 'theme_app.dart';
 
 class QuranListScreen extends StatefulWidget {
-  const QuranListScreen({super.key});
+  const QuranListScreen({super.key, this.pickPage = false});
+
+  /// true: عند اختيار سورة أو آية تُرجَع صفحتها في المصحف إلى الشاشة السابقة.
+  final bool pickPage;
 
   @override
   State<QuranListScreen> createState() => _QuranListScreenState();
@@ -40,7 +43,13 @@ class _QuranListScreenState extends State<QuranListScreen> {
     });
   }
 
-  void _openSurah(int n, {int? ayah}) {
+  Future<void> _openSurah(int n, {int? ayah}) async {
+    if (widget.pickPage) {
+      await Repo.i.loadPages();
+      if (!mounted) return;
+      Navigator.of(context).pop(Repo.i.pageOfAyah(n, ayah ?? 1));
+      return;
+    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => QuranReaderScreen(surahNumber: n, initialAyah: ayah),
@@ -52,7 +61,7 @@ class _QuranListScreenState extends State<QuranListScreen> {
   Widget build(BuildContext context) {
     final noResults = _query.isNotEmpty && _surahs.isEmpty && _hits.isEmpty;
     return AppScaffold(
-      title: 'القرآن الكريم',
+      title: widget.pickPage ? 'فهرس السور' : 'القرآن الكريم',
       body: Column(
         children: [
           Padding(

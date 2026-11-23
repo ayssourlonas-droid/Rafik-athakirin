@@ -9,14 +9,19 @@ class Bookmarks extends ChangeNotifier {
   static final Bookmarks i = Bookmarks._();
 
   static const String _prefKey = 'quran_bookmarks';
+  static const String _lastPageKey = 'quran_last_page';
   static const String red = 'red';
   static const String blue = 'blue';
 
   final Map<String, String> _marks = {};
+
+  /// آخر صفحة مصحف قُرئت (0 = لم تُقرأ صفحة بعد).
+  int lastPage = 0;
   SharedPreferences? _prefs;
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    lastPage = _prefs!.getInt(_lastPageKey) ?? 0;
     final raw = _prefs!.getString(_prefKey);
     if (raw == null) return;
     try {
@@ -25,6 +30,12 @@ class Bookmarks extends ChangeNotifier {
     } catch (_) {
       // بيانات تالفة: نبدأ من جديد دون انهيار
     }
+  }
+
+  void setLastPage(int page) {
+    if (page == lastPage) return;
+    lastPage = page;
+    _prefs?.setInt(_lastPageKey, page);
   }
 
   /// "red" أو "blue" أو null (بلا علامة)
