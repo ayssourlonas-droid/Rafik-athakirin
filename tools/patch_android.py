@@ -103,16 +103,24 @@ KOTLIN = """package __PKG__
 
 import android.app.KeyguardManager
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
+import android.hardware.GeomagneticField
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.SoundPool
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Surface
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
@@ -136,6 +144,64 @@ class MainActivity : FlutterActivity() {
     }
 
     private var lockMode = false
+
+    // بوصلة القبلة: اتجاه أعلى الهاتف من الشمال الحقيقي (مع تصحيح الانحراف المغناطيسي للموقع)
+    private var compassListener: SensorEventListener? = null
+    private var compassAccuracy = 3
+
+    private fun startCompass(sink: EventChannel.EventSink, lat: Double, lng: Double) {
+        stopCompass()
+        val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val sensor = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        if (sensor == null) {
+            sink.error("no_sensor", "لا يوجد حسّاس اتجاه في هذا الجهاز", null)
+            return
+        }
+        val declination = try {
+            GeomagneticField(lat.toFloat(), lng.toFloat(), 0f, System.currentTimeMillis()).declination
+        } catch (e: Throwable) {
+            0f
+        }
+        val rm = FloatArray(9)
+        val adj = FloatArray(9)
+        val ori = FloatArray(3)
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                SensorManager.getRotationMatrixFromVector(rm, event.values)
+                var ax = SensorManager.AXIS_X
+                var ay = SensorManager.AXIS_Y
+                val rotation = windowManager.defaultDisplay.rotation
+                if (rotation == Surface.ROTATION_90) {
+                    ax = SensorManager.AXIS_Y
+                    ay = SensorManager.AXIS_MINUS_X
+                } else if (rotation == Surface.ROTATION_180) {
+                    ax = SensorManager.AXIS_MINUS_X
+                    ay = SensorManager.AXIS_MINUS_Y
+                } else if (rotation == Surface.ROTATION_270) {
+                    ax = SensorManager.AXIS_MINUS_Y
+                    ay = SensorManager.AXIS_X
+                }
+                SensorManager.remapCoordinateSystem(rm, ax, ay, adj)
+                SensorManager.getOrientation(adj, ori)
+                var az = Math.toDegrees(ori[0].toDouble()) + declination
+                az = (az % 360.0 + 360.0) % 360.0
+                sink.success(mapOf("h" to az, "a" to compassAccuracy))
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+                compassAccuracy = accuracy
+            }
+        }
+        compassListener = listener
+        sm.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
+    }
+
+    private fun stopCompass() {
+        val l = compassListener ?: return
+        val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        sm.unregisterListener(l)
+        compassListener = null
+    }
 
     // عند فتح التطبيق من إشعار الأذان (بملء الشاشة أو بالضغط) يُسمح له بالظهور فوق القفل وإضاءة الشاشة،
     // وتُرفع هذه الأعلام فور إغلاق شاشة الأذان أو مغادرتها كي لا يبقى التطبيق ظاهرًا فوق القفل.
@@ -226,6 +292,22 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "rafiq/compass").setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    if (events == null) return
+                    val m = arguments as? Map<*, *>
+                    val lat = (m?.get("lat") as? Number)?.toDouble() ?: 0.0
+                    val lng = (m?.get("lng") as? Number)?.toDouble() ?: 0.0
+                    startCompass(events, lat, lng)
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    stopCompass()
+                }
+            }
+        )
 
         // شاشة الأذان فوق القفل
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "rafiq/lock").setMethodCallHandler { call, result ->
@@ -327,6 +409,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         stopPlayer()
+        stopCompass()
         pool?.release()
         pool = null
         super.onDestroy()
