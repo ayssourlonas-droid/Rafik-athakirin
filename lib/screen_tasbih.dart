@@ -342,11 +342,24 @@ class _TasbihScreenState extends State<TasbihScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          arDigits(count),
-          style: const TextStyle(
-              color: AppColors.textLight, fontSize: 76, fontWeight: FontWeight.bold, height: 1.1),
-        ),
+        // الصفر بالأرقام العربية (٠) يظهر نقطة تشبه خللًا في الرسم، فنكتب تلميحًا بدله
+        count == 0
+            ? const Text(
+                'اضغط للعدّ',
+                style: TextStyle(
+                    color: AppColors.textLight,
+                    fontSize: 34,
+                    fontWeight: FontWeight.bold,
+                    height: 1.6),
+              )
+            : Text(
+                arDigits(count),
+                style: const TextStyle(
+                    color: AppColors.textLight,
+                    fontSize: 76,
+                    fontWeight: FontWeight.bold,
+                    height: 1.1),
+              ),
         Text(
           target > 0 ? 'من ${arDigits(target)}' : 'عدّ مفتوح',
           style: const TextStyle(color: AppColors.textMuted, fontSize: 16),
@@ -440,7 +453,7 @@ class _TasbihScreenState extends State<TasbihScreen> {
             children: [
               Expanded(child: _stat('الدورات', arDigits(_t.rounds))),
               const SizedBox(width: 8),
-              Expanded(child: _stat('اليوم', arDigits(_t.today))),
+              Expanded(child: _stat('كل الأذكار اليوم', arDigits(_t.today))),
               const SizedBox(width: 8),
               Expanded(child: _stat('إجمالي الذكر', arDigits(_t.total))),
             ],
