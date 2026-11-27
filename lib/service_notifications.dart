@@ -69,6 +69,9 @@ class NotificationService {
 
   /// يزيد عند الضغط على تذكير المسبحة؛ يستمع إليه app_root ليفتح شاشة المسبحة.
   static final ValueNotifier<int> tasbihTap = ValueNotifier<int>(0);
+
+  /// يزيد عند الضغط على تذكير ورد القرآن؛ يستمع إليه app_root ليفتح المصحف.
+  static final ValueNotifier<int> wirdTap = ValueNotifier<int>(0);
   static const int _nowCountdownId = 1;
   static const MethodChannel _live = MethodChannel('rafiq/live'); // تحديث حي على أندرويد 16+
   static const int _testId = 9;
@@ -119,6 +122,10 @@ class NotificationService {
   void _handlePayload(String? payload) {
     if (payload == 'tasbih') {
       tasbihTap.value++;
+      return;
+    }
+    if (payload == 'wird') {
+      wirdTap.value++;
       return;
     }
     final a = AdhanAlert.parse(payload);
@@ -176,6 +183,12 @@ class NotificationService {
       'tasbih_reminders',
       'تذكيرات المسبحة',
       description: 'تذكير بتسبيح ما بعد الصلاة وتذكير يومي',
+      importance: Importance.defaultImportance,
+    ));
+    await a.createNotificationChannel(AndroidNotificationChannel(
+      'wird_reminders',
+      'تذكير ورد القرآن',
+      description: 'تذكير يومي بوردك من القرآن',
       importance: Importance.defaultImportance,
     ));
     await a.createNotificationChannel(AndroidNotificationChannel(
@@ -249,6 +262,19 @@ class NotificationService {
         'tasbih_reminders',
         'تذكيرات المسبحة',
         channelDescription: 'تذكير بتسبيح ما بعد الصلاة وتذكير يومي',
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
+        autoCancel: true,
+      ),
+    );
+  }
+
+  NotificationDetails _wirdDetails() {
+    return const NotificationDetails(
+      android: AndroidNotificationDetails(
+        'wird_reminders',
+        'تذكير ورد القرآن',
+        channelDescription: 'تذكير يومي بوردك من القرآن',
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
         autoCancel: true,
@@ -509,6 +535,25 @@ class NotificationService {
             _reminderDetails(),
             AndroidScheduleMode.inexactAllowWhileIdle,
             payload: 'tasbih',
+          );
+          count++;
+        }
+      }
+      if (s.wirdReminder) {
+        final base = DateTime.now();
+        final h = s.wirdReminderMinutes ~/ 60;
+        final mi = s.wirdReminderMinutes % 60;
+        for (var d = 0; d <= _days; d++) {
+          final at = DateTime(base.year, base.month, base.day + d, h, mi);
+          if (!at.isAfter(now)) continue;
+          await _zoned(
+            5000 + d,
+            'وقت وردك من القرآن',
+            'ولو صفحة واحدة',
+            at,
+            _wirdDetails(),
+            AndroidScheduleMode.inexactAllowWhileIdle,
+            payload: 'wird',
           );
           count++;
         }

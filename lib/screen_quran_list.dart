@@ -134,7 +134,7 @@ class _SurahTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        customBorder: ContinuousRectangleBorder(borderRadius: BorderRadius.circular(26)),
         onTap: onTap,
         child: Ink(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -187,7 +187,7 @@ class _HitTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        customBorder: ContinuousRectangleBorder(borderRadius: BorderRadius.circular(26)),
         onTap: onTap,
         child: Ink(
           padding: const EdgeInsets.all(14),

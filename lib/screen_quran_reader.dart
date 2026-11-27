@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'data_bookmarks.dart';
 import 'data_repo.dart';
+import 'data_wird.dart';
 import 'theme_app.dart';
 import 'view_mushaf_pages.dart';
 import 'view_quran_cards.dart';
@@ -22,6 +23,12 @@ class _QuranReaderScreenState extends State<QuranReaderScreen> {
   int _mode = 0; // 0 بطاقات، 1 صفحة متصلة، 2 مصحف حقيقي
   final Future<void> _pages = Repo.i.loadPages();
 
+  @override
+  void dispose() {
+    Wird.i.leave(); // لا تُحتسب صفحة غادرتَها قبل مرور المدة
+    super.dispose();
+  }
+
   Widget _body(Surah s) {
     switch (_mode) {
       case 1:
@@ -35,7 +42,10 @@ class _QuranReaderScreenState extends State<QuranReaderScreen> {
             }
             return MushafPagesView(
               initialPage: Repo.i.pageOfAyah(s.n, widget.initialAyah ?? 1),
-              onPageChanged: Bookmarks.i.setLastPage,
+              onPageChanged: (p) {
+                Bookmarks.i.setLastPage(p);
+                Wird.i.visit(p);
+              },
             );
           },
         );

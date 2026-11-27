@@ -19,7 +19,11 @@ class TasbihScreen extends StatefulWidget {
   State<TasbihScreen> createState() => _TasbihScreenState();
 }
 
-class _TasbihScreenState extends State<TasbihScreen> {
+class _TasbihScreenState extends State<TasbihScreen> with SingleTickerProviderStateMixin {
+  // نبضة قصيرة تحيي الحبّة التي عُدّت للتوّ
+  late final AnimationController _pulse =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 260));
+
   final Tasbih _t = Tasbih.i;
   bool _pressed = false;
   String? _flash;
@@ -33,6 +37,7 @@ class _TasbihScreenState extends State<TasbihScreen> {
 
   @override
   void dispose() {
+    _pulse.dispose();
     _flashTimer?.cancel();
     super.dispose();
   }
@@ -47,6 +52,7 @@ class _TasbihScreenState extends State<TasbihScreen> {
 
   void _tap() {
     final ev = _t.tap();
+    _pulse.forward(from: 0);
     if (_t.sound) Sfx.play(ev == TasbihEvent.tick ? 'tasbih_tick' : 'tasbih_done');
     if (_t.vibrate) {
       if (ev == TasbihEvent.tick) {
@@ -438,7 +444,7 @@ class _TasbihScreenState extends State<TasbihScreen> {
                         width: side,
                         height: side,
                         child: CustomPaint(
-                          painter: _BeadsPainter(count: count, target: target),
+                          painter: _BeadsPainter(count: count, target: target, pulse: _pulse),
                           child: Center(child: _counter(count, target)),
                         ),
                       );
@@ -531,10 +537,12 @@ class _TasbihScreenState extends State<TasbihScreen> {
 
 /// حبّات حول الدائرة (للأهداف حتى ٤٠)، وقوس تقدّم للأهداف الأكبر.
 class _BeadsPainter extends CustomPainter {
-  _BeadsPainter({required this.count, required this.target});
+  _BeadsPainter({required this.count, required this.target, required this.pulse})
+      : super(repaint: pulse);
 
   final int count;
   final int target;
+  final Animation<double> pulse;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -554,9 +562,15 @@ class _BeadsPainter extends CustomPainter {
         final a = -math.pi / 2 + 2 * math.pi * i / target;
         final p = c + Offset(math.cos(a), math.sin(a)) * r;
         final on = i < count;
+        // الحبّة التي عُدّت للتوّ تكبر وتتوهج ثم تعود
+        final fresh = on && i == count - 1;
+        final k = fresh ? 1.0 - Curves.easeOut.transform(pulse.value) : 0.0;
+        if (fresh && k > 0) {
+          canvas.drawCircle(p, 7.5 + 12 * k, Paint()..color = AppColors.gold.withValues(alpha: 0.35 * k));
+        }
         canvas.drawCircle(
           p,
-          on ? 7.5 : 6.0,
+          (on ? 7.5 : 6.0) + (fresh ? 3.5 * k : 0.0),
           Paint()..color = on ? AppColors.gold : AppColors.cardBorder,
         );
       }

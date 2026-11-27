@@ -130,9 +130,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: selected ? AppColors.gold : AppColors.cardBorder),
+      decoration: AppDecor.glass(
+        radius: 20,
+        borderColor: selected ? AppColors.gold : AppColors.cardBorder,
+        borderWidth: selected ? 1.6 : 1,
       ),
       child: Column(
         children: [

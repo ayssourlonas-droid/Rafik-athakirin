@@ -6,9 +6,12 @@ import 'package:flutter/material.dart';
 import 'data_bookmarks.dart';
 import 'data_repo.dart';
 import 'data_settings.dart';
+import 'data_prayerlog.dart';
 import 'data_tasbih.dart';
+import 'data_wird.dart';
 import 'screen_adhan.dart';
 import 'screen_home.dart';
+import 'screen_quran_book.dart';
 import 'screen_tasbih.dart';
 import 'service_location.dart';
 import 'service_notifications.dart';
@@ -29,6 +32,8 @@ class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
     await Repo.i.init();
     await Bookmarks.i.init();
     await Tasbih.i.init();
+    await Wird.i.init();
+    await PrayerLog.i.init();
     await AppSettings.i.init();
     await NotificationService.i.init();
     AppSettings.i.addListener(_scheduleSoon);
@@ -49,6 +54,23 @@ class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
 
   void _onTasbih() {
     _openTasbih(0);
+  }
+
+  void _onWird() {
+    _openWird(0);
+  }
+
+  void _openWird(int attempt) {
+    final nav = _nav.currentState;
+    if (nav == null) {
+      if (attempt < 20) {
+        Future<void>.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) _openWird(attempt + 1);
+        });
+      }
+      return;
+    }
+    nav.push(MaterialPageRoute<void>(builder: (_) => const QuranBookScreen()));
   }
 
   void _openTasbih(int attempt) {
@@ -95,6 +117,7 @@ class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     NotificationService.adhanAlert.addListener(_onAdhan);
     NotificationService.tasbihTap.addListener(_onTasbih);
+    NotificationService.wirdTap.addListener(_onWird);
   }
 
   @override
@@ -110,6 +133,7 @@ class _RafiqAppState extends State<RafiqApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     NotificationService.adhanAlert.removeListener(_onAdhan);
     NotificationService.tasbihTap.removeListener(_onTasbih);
+    NotificationService.wirdTap.removeListener(_onWird);
     AppSettings.i.removeListener(_scheduleSoon);
     _debounce?.cancel();
     super.dispose();

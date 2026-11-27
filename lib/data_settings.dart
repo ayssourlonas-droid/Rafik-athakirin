@@ -170,6 +170,8 @@ class AppSettings extends ChangeNotifier {
   final List<FollowCity> follows = [];
   int hijriOffset = 0; // ضبط التقويم الهجري بالأيام (-2..2)
   bool adhanLockScreen = true; // شاشة الأذان فوق القفل
+  bool wirdReminder = false; // تذكير ورد القرآن
+  int wirdReminderMinutes = 20 * 60;
   bool tasbihAfterPrayer = false; // تذكير بتسبيح ما بعد الصلاة
   int tasbihDelayMin = 10; // بعد كم دقيقة من الصلاة
   bool tasbihDaily = false; // تذكير يومي
@@ -196,6 +198,8 @@ class AppSettings extends ChangeNotifier {
     permsAsked = p.getBool('permsAsked') ?? false;
     hijriOffset = (p.getInt('hijriOff') ?? 0).clamp(-2, 2).toInt();
     adhanLockScreen = p.getBool('lockScreen') ?? true;
+    wirdReminder = p.getBool('wirdRem') ?? false;
+    wirdReminderMinutes = (p.getInt('wirdAt') ?? 20 * 60).clamp(0, 1439).toInt();
     tasbihAfterPrayer = p.getBool('tsAfter') ?? false;
     tasbihDelayMin = (p.getInt('tsDelay') ?? 10).clamp(0, 30).toInt();
     tasbihDaily = p.getBool('tsDaily') ?? false;
@@ -245,6 +249,8 @@ class AppSettings extends ChangeNotifier {
     await p.setBool('permsAsked', permsAsked);
     await p.setInt('hijriOff', hijriOffset);
     await p.setBool('lockScreen', adhanLockScreen);
+    await p.setBool('wirdRem', wirdReminder);
+    await p.setInt('wirdAt', wirdReminderMinutes);
     await p.setBool('tsAfter', tasbihAfterPrayer);
     await p.setInt('tsDelay', tasbihDelayMin);
     await p.setBool('tsDaily', tasbihDaily);
@@ -293,6 +299,16 @@ class AppSettings extends ChangeNotifier {
 
   void setAdhanLockScreen(bool v) {
     adhanLockScreen = v;
+    _commit();
+  }
+
+  void setWirdReminder(bool v) {
+    wirdReminder = v;
+    _commit();
+  }
+
+  void setWirdReminderTime(int minutes) {
+    wirdReminderMinutes = minutes.clamp(0, 1439).toInt();
     _commit();
   }
 

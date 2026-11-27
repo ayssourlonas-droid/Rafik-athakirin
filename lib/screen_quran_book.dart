@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'data_bookmarks.dart';
 import 'data_repo.dart';
+import 'data_wird.dart';
 import 'screen_quran_list.dart';
 import 'screen_quran_reader.dart';
 import 'theme_app.dart';
@@ -33,6 +34,13 @@ class _QuranBookScreenState extends State<QuranBookScreen> {
   void _onPage(int p) {
     _current = p; // دون setState: يُستدعى أثناء البناء
     Bookmarks.i.setLastPage(p);
+    Wird.i.visit(p); // تُحتسب في الورد إن بقيتَ عليها بضع ثوانٍ
+  }
+
+  @override
+  void dispose() {
+    Wird.i.leave();
+    super.dispose();
   }
 
   Future<void> _openIndex() async {

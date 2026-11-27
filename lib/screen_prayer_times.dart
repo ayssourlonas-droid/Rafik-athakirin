@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'data_format.dart';
 import 'data_hijri.dart';
+import 'data_prayerlog.dart';
 import 'data_repo.dart';
 import 'data_settings.dart';
 import 'prayer_calc.dart';
@@ -204,7 +205,13 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
             ),
           ),
         for (final p in Prayer.values)
-          _row(p, today[p], isNext: p == nextPrayer && today[p] == nextTime),
+          _row(
+            p,
+            today[p],
+            isNext: p == nextPrayer && today[p] == nextTime,
+            day: DateTime(place.year, place.month, place.day),
+          ),
+        _logCard(DateTime(place.year, place.month, place.day)),
         if (s.follows.isNotEmpty) ..._followSection(s),
         const SizedBox(height: 12),
         Text(
@@ -261,12 +268,92 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
     );
   }
 
-  Widget _row(Prayer p, DateTime? t, {required bool isNext}) {
+  static const List<String> _weekdayShort = [
+    'اثنين',
+    'ثلاثاء',
+    'أربعاء',
+    'خميس',
+    'جمعة',
+    'سبت',
+    'أحد',
+  ];
+
+  /// ملخص الصلوات المؤدّاة اليوم وآخر سبعة أيام (يعلّمها المستخدم بنفسه).
+  Widget _logCard(DateTime today) {
+    final log = PrayerLog.i;
+    final done = log.countOn(today);
+    final days = [for (var i = 6; i >= 0; i--) DateTime(today.year, today.month, today.day - i)];
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: AppDecor.glass(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'المؤدّاة اليوم: ${arDigits(done)} من ${arDigits(5)}',
+            style: const TextStyle(color: AppColors.textLight, fontSize: 16),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'علّم كل صلاة بالدائرة بعد أدائها؛ السجل على جهازك وحدك.',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (final d in days)
+                Expanded(
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        height: 44,
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Container(
+                            width: 14,
+                            height: 4 + 40 * log.countOn(d) / 5,
+                            decoration: BoxDecoration(
+                              color: d == today ? AppColors.gold : AppColors.goldSoft,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _weekdayShort[d.weekday - 1],
+                        style: TextStyle(
+                          color: d == today ? AppColors.gold : AppColors.textMuted,
+                          fontSize: 10,
+                        ),
+                      ),
+                      Text(
+                        arDigits(log.countOn(d)),
+                        style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(Prayer p, DateTime? t, {required bool isNext, required DateTime day}) {
+    final log = PrayerLog.i;
+    final done = log.done(day, p);
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 5),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: AppDecor.glass(glow: isNext).copyWith(
-        border: Border.all(color: isNext ? AppColors.gold : AppColors.cardBorder, width: isNext ? 1.6 : 1),
+      decoration: AppDecor.glass(
+        glow: isNext,
+        radius: 22,
+        borderColor: isNext ? AppColors.gold : AppColors.cardBorder,
+        borderWidth: isNext ? 1.6 : 1,
       ),
       child: Row(
         children: [
@@ -282,6 +369,21 @@ class _PrayerTimesScreenState extends State<PrayerTimesScreen> {
                 fontSize: 19,
                 fontWeight: isNext ? FontWeight.bold : FontWeight.normal,
               )),
+          if (p.isObligatory)
+            GestureDetector(
+              onTap: () {
+                log.toggle(day, p);
+                setState(() {});
+              },
+              child: Padding(
+                padding: const EdgeInsetsDirectional.only(start: 12),
+                child: Icon(
+                  done ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: done ? const Color(0xFF4CAF50) : AppColors.textMuted,
+                  size: 30,
+                ),
+              ),
+            ),
         ],
       ),
     );

@@ -2,19 +2,23 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  static const Color bgDeep = Color(0xFF061910);
-  static const Color bgMid = Color(0xFF0A2D1A);
-  static const Color bgLight = Color(0xFF123C25);
+  // اللوحة مستخلصة من صور الواجهة: تيل عميق، وذهب دافئ، وكريمي
+  static const Color bgDeep = Color(0xFF001B1A);
+  static const Color bgMid = Color(0xFF012223);
+  static const Color bgLight = Color(0xFF013537);
+  static const Color tealRim = Color(0xFF025152); // حافة التيل في الأيقونات
+  static const Color tealGlow = Color(0xFF1B9A98); // توهج التيل
 
-  static const Color gold = Color(0xFFD4A943);
-  static const Color goldSoft = Color(0xFFF2D166);
-  static const Color goldGlow = Color(0x59E6BF59);
+  static const Color gold = Color(0xFFD9AE5C);
+  static const Color goldSoft = Color(0xFFF2D08A);
+  static const Color goldGlow = Color(0x59D9AE5C);
+  static const Color sand = Color(0xFFD7C49B);
 
-  static const Color cardBg = Color(0x8C0F3D26);
-  static const Color cardBorder = Color(0x59D4A943);
+  static const Color cardBg = Color(0x99013537);
+  static const Color cardBorder = Color(0x59D9AE5C);
 
-  static const Color textLight = Color(0xFFFAF2D9);
-  static const Color textMuted = Color(0xB3BFD9C7);
+  static const Color textLight = Color(0xFFFAE6C0);
+  static const Color textMuted = Color(0xB39FB8B4);
 
   // ورقة المصحف
   static const Color paper = Color(0xFFF5EDD6);
@@ -36,16 +40,70 @@ class AppText {
 }
 
 class AppDecor {
-  static BoxDecoration glass({bool glow = false}) {
-    return BoxDecoration(
-      color: AppColors.cardBg,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: AppColors.cardBorder),
-      boxShadow: glow
-          ? const [BoxShadow(color: AppColors.goldGlow, blurRadius: 12)]
-          : null,
+  /// بطاقة بحواف مستمرة ناعمة (squircle) كأيقونات الواجهة: تدرّج تيل خفيف، وحد ذهبي رفيع، وظل عميق.
+  static ShapeDecoration glass({
+    bool glow = false,
+    double radius = 26,
+    Color? borderColor,
+    double borderWidth = 1,
+  }) {
+    return ShapeDecoration(
+      gradient: const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Color(0xB3025152), Color(0xB3012A2C)],
+      ),
+      shape: ContinuousRectangleBorder(
+        borderRadius: BorderRadius.circular(radius),
+        side: BorderSide(color: borderColor ?? AppColors.cardBorder, width: borderWidth),
+      ),
+      shadows: [
+        const BoxShadow(color: Color(0x66000000), blurRadius: 14, offset: Offset(0, 6)),
+        if (glow) const BoxShadow(color: AppColors.goldGlow, blurRadius: 16),
+      ],
     );
   }
+}
+
+/// زخرفة نجمية هندسية خافتة جدًا (مربعان متداخلان بزاوية ٤٥°) تُرسم مرة واحدة بالكود.
+class _StarPatternPainter extends CustomPainter {
+  const _StarPatternPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const cell = 92.0;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = const Color(0x16D9AE5C);
+    final cols = (size.width / cell).ceil() + 1;
+    final rows = (size.height / (cell * 0.5)).ceil() + 1;
+    const a = cell * 0.27; // نصف ضلع المربع
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        final cx = c * cell + (r.isOdd ? cell / 2 : 0);
+        final cy = r * cell * 0.5;
+        final sq = Path()
+          ..moveTo(cx - a, cy - a)
+          ..lineTo(cx + a, cy - a)
+          ..lineTo(cx + a, cy + a)
+          ..lineTo(cx - a, cy + a)
+          ..close();
+        canvas.drawPath(sq, paint);
+        final d = a * 1.4142;
+        final dm = Path()
+          ..moveTo(cx, cy - d)
+          ..lineTo(cx + d, cy)
+          ..lineTo(cx, cy + d)
+          ..lineTo(cx - d, cy)
+          ..close();
+        canvas.drawPath(dm, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_StarPatternPainter old) => false;
 }
 
 class AppBackground extends StatelessWidget {
@@ -63,7 +121,15 @@ class AppBackground extends StatelessWidget {
           stops: [0.0, 0.55, 1.0],
         ),
       ),
-      child: child,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const IgnorePointer(
+            child: RepaintBoundary(child: CustomPaint(painter: _StarPatternPainter())),
+          ),
+          child,
+        ],
+      ),
     );
   }
 }
@@ -111,6 +177,13 @@ ThemeData buildAppTheme() {
         fontWeight: FontWeight.bold,
         color: AppColors.gold,
       ),
+      shape: Border(bottom: BorderSide(color: AppColors.cardBorder)),
+    ),
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: <TargetPlatform, PageTransitionsBuilder>{
+        TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      },
     ),
   );
 }
